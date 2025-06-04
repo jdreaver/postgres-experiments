@@ -79,7 +79,18 @@ passwd -d root
 ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 systemctl enable systemd-networkd
 systemctl enable systemd-resolved
+
+# Locale
+sed -i 's/^#\(en_US.UTF-8\)/\1/' /etc/locale.gen
+locale-gen
+echo 'LANG=en_US.UTF-8' >/etc/locale.conf
+
+# Set up postgres
+sudo -u postgres initdb --locale=C.UTF-8 --encoding=UTF8 -D /var/lib/postgres/data
+systemctl enable postgresql.service
 EOF
+
+    sleep 1 # Some sort of race condition where systemd-nspawn complains about dir being busy
 
     sudo systemd-nspawn -D "$directory" bash /bootstrap.sh
 }
