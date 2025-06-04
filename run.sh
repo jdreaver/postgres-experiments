@@ -2,14 +2,31 @@
 
 set -euo pipefail
 
-# Create an Arch Linux rootfs for use with systemd-nspawn
-create_arch_rootfs() {
-    if [[ $# -ne 1 ]]; then
-        echo "Usage: create_arch_rootfs <directory>"
+NETWORK_BASE=10.42.0
+NETWORK_CIDR_SLASH=24
+NETDEV_NAME=pglab0
+
+make_network_ip() {
+    local suffix="$1"
+    if [[ -z "$suffix" ]]; then
+        echo "Usage: make_network_ip <suffix>"
         return 1
     fi
 
-    local directory="$1"
+    echo "${NETWORK_BASE}.${suffix}"
+}
+
+make_network_ip_cidr() {
+    echo "$(make_network_ip "$1")/${NETWORK_CIDR_SLASH}"
+}
+
+create_machine() {
+    if [[ $# -ne 1 ]]; then
+        echo "Usage: create_machine <name>"
+        return 1
+    fi
+
+    local name="$1"
 
     args=(
         -c # Use package cache on host
@@ -18,81 +35,75 @@ create_arch_rootfs() {
 
     packages=(
         base
+        fish
+        inetutils
         postgresql
+        nano
+        sudo
+        zsh
     )
 
+    local directory="/var/lib/machines/$name"
     echo "Creating Arch Linux rootfs in '$directory'"
 
     sudo rm -rf "$directory"
-    mkdir -p "$directory"
+    sudo mkdir -p "$directory"
 
     sudo pacstrap "${args[@]}" "$directory" "${packages[@]}"
 
-    # Don't require a password for root in the container
-    sudo systemd-nspawn -D "$directory" passwd -d root
+    sudo tee "$directory/etc/systemd/network/host0.network" > /dev/null <<EOF
+[Match]
+Name=host0
+
+[Network]
+# TODO Vary IPs per host
+Address=$(make_network_ip_cidr 2)
+Gateway=$(make_network_ip 1)
+DNS=$(make_network_ip 1)
+EOF
+
+    sudo tee "/run/systemd/nspawn/$name.nspawn" > /dev/null <<EOF
+[Network]
+Bridge=$NETDEV_NAME
+
+[Exec]
+Boot=yes
+EOF
+
+    sudo tee "$directory/bootstrap.sh" > /dev/null <<EOF
+# Don't require a password for root in the container
+passwd -d root
+
+# Enable systemd-networkd
+ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+systemctl enable systemd-networkd
+systemctl enable systemd-resolved
+EOF
+
+    sudo systemd-nspawn -D "$directory" bash /bootstrap.sh
 }
 
-setup_bridge_lab0() {
-    local bridge=lab0
-    local bridge_ip=10.42.0.1/24
+setup_lab_network() {
+    sudo mkdir -p /run/systemd/network
 
-    # Create bridge if it doesn't exist
-    if ! ip link show "$bridge" &>/dev/null; then
-        echo "Creating bridge: $bridge"
-        sudo ip link add name "$bridge" type bridge
-    fi
+    sudo tee /run/systemd/network/$NETDEV_NAME.netdev > /dev/null <<EOF
+[NetDev]
+Name=$NETDEV_NAME
+Kind=bridge
+EOF
 
-    # Bring up the bridge
-    sudo ip link set "$bridge" up
+    sudo tee /run/systemd/network/$NETDEV_NAME.network > /dev/null <<EOF
+[Match]
+Name=$NETDEV_NAME
 
-    # Assign IP if not already present
-    if ! ip addr show dev "$bridge" | grep -q "$bridge_ip"; then
-        sudo ip addr add "$bridge_ip" dev "$bridge"
-    fi
-}
+[Network]
+Address=$(make_network_ip_cidr 1)
+DHCPServer=yes
+IPForward=yes
+EOF
 
-setup_container_veth() {
-    local name="$1"
-    local bridge=lab0
-    local veth_host="veth-host-$name"
-    local veth_cont="veth-cont-$name"
-
-    # Delete existing veth pair if needed (idempotency)
-    if ip link show "$veth_host" &>/dev/null; then
-        sudo ip link delete "$veth_host"
-    fi
-
-    # Create veth pair
-    sudo ip link add "$veth_host" type veth peer name "$veth_cont"
-
-    # Attach host end to bridge
-    sudo ip link set "$veth_host" master "$bridge"
-    sudo ip link set "$veth_host" up
-
-    # Set container end up, but don't attach to anything yet (nspawn will)
-    sudo ip link set "$veth_cont" up
-}
-
-start_pg_container() {
-    local name="$1"
-    local directory="$2"
-    sudo systemd-nspawn -M "$name" -D "$directory" \
-        --network-interface="veth-cont-$name" \
-        --boot
-}
-
-setup_and_run_pg() {
-    # Create base-image if it doesn't exist
-    if [[ ! -d base-image ]]; then
-        echo "Creating base image..."
-        create_arch_rootfs base-image
-    else
-        echo "Base image already exists, skipping creation."
-    fi
-
-    setup_bridge_lab0
-    setup_container_veth pg1
-    start_pg_container pg1 base-image
+    sudo systemctl daemon-reload # I don't think daemon-reload is necessary for network stuff
+    sudo systemctl restart systemd-networkd
 }
 
 # CLI entrypoint if run directly
