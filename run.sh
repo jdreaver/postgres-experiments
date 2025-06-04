@@ -62,6 +62,7 @@ Gateway=$(make_network_ip 1)
 DNS=$(make_network_ip 1)
 EOF
 
+    sudo mkdir -p /run/systemd/nspawn
     sudo tee "/run/systemd/nspawn/$name.nspawn" > /dev/null <<EOF
 [Network]
 Bridge=$NETDEV_NAME
@@ -110,11 +111,11 @@ EOF
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     set -euo pipefail
 
-    # If no args, fail
-    if [[ $# -eq 0 ]]; then
-        echo "Usage: $0 <command> (see script source for available commands)"
-        exit 1
+    if [[ $# -ne 0 ]]; then
+        "$@"
+        exit
     fi
 
-    "$@"
+    setup_lab_network
+    create_machine "pg0"
 fi
