@@ -87,6 +87,10 @@ echo "listen_addresses = '*'" >> /var/lib/postgres/data/postgresql.conf
 echo 'log_connections = on' >> /var/lib/postgres/data/postgresql.conf
 echo 'log_hostname = on' >> /var/lib/postgres/data/postgresql.conf
 
+# More settings
+echo 'synchronous_commit = off' >> /var/lib/postgres/data/postgresql.conf
+echo 'work_mem = 64MB' >> /var/lib/postgres/data/postgresql.conf
+
 # SSH
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
 sed -i 's/^#\?PermitEmptyPasswords.*/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
@@ -181,6 +185,21 @@ systemctl status postgresql.service
 
 }
 
+run_pgbench() {
+    if [[ $# -ne 1 ]]; then
+        echo "Usage: run_pgbench <leader-ip"
+        return 1
+    fi
+
+    local leader="$1"
+
+    # Initialize with scale factor -s
+    pgbench -h "$leader" -U postgres -i -s 50 postgres
+
+    # Run pgbench for -T seconds with -c clients and -j threads
+    pgbench -h "$leader" -U postgres -c 10 -j 4 -T 20 postgres
+}
+
 # CLI entrypoint if run directly
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     set -euo pipefail
@@ -202,4 +221,5 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     sleep 5
 
     setup_replication 10.42.0.2 10.42.0.3
+    run_pgbench 10.42.0.2
 fi
