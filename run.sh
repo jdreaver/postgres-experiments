@@ -22,16 +22,8 @@ make_network_ip_cidr() {
     echo "$(make_network_ip "$1")/${NETWORK_CIDR_SLASH}"
 }
 
-create_machine() {
-    if [[ $# -ne 2 ]]; then
-        echo "Usage: create_machine <name> <ip_suffix>"
-        return 1
-    fi
-
-    local name="$1"
-    local ip_suffix="$2"
-
-    args=(
+create_pgbase_machine() {
+    pacstrap_args=(
         -c # Use package cache on host
         -K # Do not use the host's pacman keyring
     )
@@ -53,35 +45,13 @@ create_machine() {
         zsh
     )
 
-    local directory="/var/lib/machines/$name"
+    local directory="/var/lib/machines/pgbase"
     echo "Creating Arch Linux rootfs in '$directory'"
 
     sudo rm -rf "$directory"
     sudo mkdir -p "$directory"
 
-    sudo pacstrap "${args[@]}" "$directory" "${packages[@]}"
-
-    # N.B. Network file must start with 10- to be loaded before
-    # /usr/lib/systemd/network/80-container-host0.network
-    sudo tee "$directory/etc/systemd/network/10-host0.network" > /dev/null <<EOF
-[Match]
-Name=host0
-
-[Network]
-Address=$(make_network_ip_cidr "$ip_suffix")
-Gateway=$(make_network_ip 1)
-DNS=$(make_network_ip 1)
-DHCP=no
-EOF
-
-    sudo mkdir -p /run/systemd/nspawn
-    sudo tee "/run/systemd/nspawn/$name.nspawn" > /dev/null <<EOF
-[Network]
-Bridge=$NETDEV_NAME
-
-[Exec]
-Boot=yes
-EOF
+    sudo pacstrap "${pacstrap_args[@]}" "$directory" "${packages[@]}"
 
     sudo tee "$directory/bootstrap.sh" > /dev/null <<EOF
 # Don't require a password for root in the container
@@ -94,9 +64,6 @@ chsh -s /usr/bin/fish root
 ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 systemctl enable systemd-networkd
 systemctl enable systemd-resolved
-
-# Hostname
-echo "$name" >/etc/hostname
 
 # Locale
 sed -i 's/^#\(en_US.UTF-8\)/\1/' /etc/locale.gen
@@ -127,9 +94,46 @@ sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/ssh
 systemctl enable sshd.service
 EOF
 
-    sleep 1 # Some sort of race condition where systemd-nspawn complains about dir being busy
-
     sudo systemd-nspawn -D "$directory" bash /bootstrap.sh
+}
+
+create_machine() {
+    if [[ $# -ne 2 ]]; then
+        echo "Usage: create_machine <name> <ip_suffix>"
+        return 1
+    fi
+
+    local name="$1"
+    local ip_suffix="$2"
+
+    local directory="/var/lib/machines/$name"
+
+    sudo rm -rf "$directory"
+    sudo cp --archive /var/lib/machines/pgbase "$directory"
+
+    # N.B. Network file must start with 10- to be loaded before
+    # /usr/lib/systemd/network/80-container-host0.network
+    sudo tee "$directory/etc/systemd/network/10-host0.network" > /dev/null <<EOF
+[Match]
+Name=host0
+
+[Network]
+Address=$(make_network_ip_cidr "$ip_suffix")
+Gateway=$(make_network_ip 1)
+DNS=$(make_network_ip 1)
+DHCP=no
+EOF
+
+    sudo mkdir -p /run/systemd/nspawn
+    sudo tee "/run/systemd/nspawn/$name.nspawn" > /dev/null <<EOF
+[Network]
+Bridge=$NETDEV_NAME
+
+[Exec]
+Boot=yes
+EOF
+
+    echo "$name" | sudo tee "$directory/etc/hostname"
 }
 
 setup_lab_network() {
@@ -187,6 +191,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     fi
 
     setup_lab_network
+    create_pgbase_machine
     create_machine "pg0" 2
     create_machine "pg1" 3
 
