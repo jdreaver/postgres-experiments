@@ -94,6 +94,12 @@ echo 'LANG=en_US.UTF-8' >/etc/locale.conf
 # Set up postgres
 sudo -u postgres initdb --locale=C.UTF-8 --encoding=UTF8 -D /var/lib/postgres/data
 systemctl enable postgresql.service
+
+# Allow connections from all hosts, without password
+echo "host    all             all             0.0.0.0/0            trust" >> /var/lib/postgres/data/pg_hba.conf
+
+# Bind to all interfaces
+echo "listen_addresses = '*'" >> /var/lib/postgres/data/postgresql.conf
 EOF
 
     sleep 1 # Some sort of race condition where systemd-nspawn complains about dir being busy
