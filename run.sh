@@ -146,4 +146,5 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 
     setup_lab_network
     create_machine "pg0" 2
+    create_machine "pg1" 3
 fi
