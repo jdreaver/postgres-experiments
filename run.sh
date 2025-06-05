@@ -37,6 +37,7 @@ create_machine() {
     packages=(
         base
         postgresql
+        openssh
 
         bat
         eza
@@ -84,6 +85,9 @@ EOF
 # Don't require a password for root in the container
 passwd -d root
 
+# Use /usr/bin/fish as login shell for root
+chsh -s /usr/bin/fish root
+
 # Enable systemd-networkd
 ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 systemctl enable systemd-networkd
@@ -106,6 +110,12 @@ echo "host    all             all             0.0.0.0/0            trust" >> /va
 
 # Bind to all interfaces
 echo "listen_addresses = '*'" >> /var/lib/postgres/data/postgresql.conf
+
+# SSH
+sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+sed -i 's/^#\?PermitEmptyPasswords.*/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+systemctl enable sshd.service
 EOF
 
     sleep 1 # Some sort of race condition where systemd-nspawn complains about dir being busy
