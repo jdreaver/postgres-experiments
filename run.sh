@@ -36,10 +36,16 @@ create_machine() {
 
     packages=(
         base
+        postgresql
+
+        bat
+        eza
         fish
         inetutils
-        postgresql
+        less
         nano
+        procs
+        ripgrep
         sudo
         zsh
     )
