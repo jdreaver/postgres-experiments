@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+
 NETWORK_BASE=10.42.0
 NETWORK_CIDR_SLASH=24
 NETDEV_NAME=pglab0
@@ -108,8 +110,15 @@ systemctl enable postgresql.service
 # Allow connections from all hosts, without password
 echo "host    all             all             0.0.0.0/0            trust" >> /var/lib/postgres/data/pg_hba.conf
 
+# Allow replication from all hosts
+echo "host    replication     all             0.0.0.0/0            trust" >> /var/lib/postgres/data/pg_hba.conf
+
 # Bind to all interfaces
 echo "listen_addresses = '*'" >> /var/lib/postgres/data/postgresql.conf
+
+# More logging
+echo 'log_connections = on' >> /var/lib/postgres/data/postgresql.conf
+echo 'log_hostname = on' >> /var/lib/postgres/data/postgresql.conf
 
 # SSH
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
@@ -145,6 +154,29 @@ EOF
     sudo systemctl restart systemd-networkd
 }
 
+setup_replication() {
+    if [[ $# -ne 2 ]]; then
+        echo "Usage: setup_replication <leader-ip> <follower-ip>"
+        return 1
+    fi
+
+    local leader="$1"
+    local follower="$2"
+
+    set -x
+
+    $SSH "root@$follower" "bash -c \"
+set -euo pipefail
+
+systemctl stop postgresql.service
+rm -rf /var/lib/postgres/data/* || true
+sudo -u postgres pg_basebackup -d 'host=$leader user=postgres' -D /var/lib/postgres/data -R -P
+systemctl start postgresql.service
+systemctl status postgresql.service
+\""
+
+}
+
 # CLI entrypoint if run directly
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     set -euo pipefail
@@ -157,4 +189,12 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     setup_lab_network
     create_machine "pg0" 2
     create_machine "pg1" 3
+
+    sudo machinectl start pg0
+    sudo machinectl start pg1
+
+    echo "Waiting for startup"
+    sleep 5
+
+    setup_replication 10.42.0.2 10.42.0.3
 fi
