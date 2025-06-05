@@ -21,12 +21,13 @@ make_network_ip_cidr() {
 }
 
 create_machine() {
-    if [[ $# -ne 1 ]]; then
-        echo "Usage: create_machine <name>"
+    if [[ $# -ne 2 ]]; then
+        echo "Usage: create_machine <name> <ip_suffix>"
         return 1
     fi
 
     local name="$1"
+    local ip_suffix="$2"
 
     args=(
         -c # Use package cache on host
@@ -51,15 +52,17 @@ create_machine() {
 
     sudo pacstrap "${args[@]}" "$directory" "${packages[@]}"
 
-    sudo tee "$directory/etc/systemd/network/host0.network" > /dev/null <<EOF
+    # N.B. Network file must start with 10- to be loaded before
+    # /usr/lib/systemd/network/80-container-host0.network
+    sudo tee "$directory/etc/systemd/network/10-host0.network" > /dev/null <<EOF
 [Match]
 Name=host0
 
 [Network]
-# TODO Vary IPs per host
-Address=$(make_network_ip_cidr 2)
+Address=$(make_network_ip_cidr "$ip_suffix")
 Gateway=$(make_network_ip 1)
 DNS=$(make_network_ip 1)
+DHCP=no
 EOF
 
     sudo mkdir -p /run/systemd/nspawn
@@ -79,6 +82,9 @@ passwd -d root
 ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 systemctl enable systemd-networkd
 systemctl enable systemd-resolved
+
+# Hostname
+echo "$name" >/etc/hostname
 
 # Locale
 sed -i 's/^#\(en_US.UTF-8\)/\1/' /etc/locale.gen
@@ -110,7 +116,6 @@ Name=$NETDEV_NAME
 
 [Network]
 Address=$(make_network_ip_cidr 1)
-DHCPServer=yes
 IPForward=yes
 EOF
 
@@ -128,5 +133,5 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     fi
 
     setup_lab_network
-    create_machine "pg0"
+    create_machine "pg0" 2
 fi
