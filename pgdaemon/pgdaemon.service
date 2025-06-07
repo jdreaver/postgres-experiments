@@ -5,6 +5,8 @@ After=network.target pgbouncer.service postgres.service
 
 [Service]
 ExecStart=/usr/bin/pgdaemon
+Restart=always
+RestartSec=1s
 
 [Install]
 WantedBy=multi-user.target
