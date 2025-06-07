@@ -27,8 +27,10 @@ create_pgbase_machine() {
     packages=(
         base
         postgresql
+        pgbouncer
         openssh
 
+        # Misc tools/utils
         bat
         dnsutils
         eza
@@ -136,8 +138,23 @@ setup_postgres() {
     local name="$1"
     local directory="/var/lib/machines/$name"
 
+    sudo mkdir -p "$directory/etc/pgbouncer"
+    sudo tee "$directory/etc/pgbouncer/pgbouncer.ini" > /dev/null <<EOF
+[databases]
+* = host=127.0.0.1 port=5432
+
+[pgbouncer]
+listen_addr = 0.0.0.0
+listen_port = 6432
+auth_type = trust
+auth_file = /etc/pgbouncer/userlist.txt
+pool_mode = transaction
+admin_users = postgres
+server_reset_query = DISCARD ALL
+EOF
+
     sudo tee "$directory/bootstrap.sh" > /dev/null <<EOF
-# Initialize data and start service
+# Initialize data and start services
 sudo -u postgres initdb --locale=C.UTF-8 --encoding=UTF8 -D /var/lib/postgres/data
 systemctl enable postgresql.service
 
@@ -157,6 +174,12 @@ echo 'log_hostname = on' >> /var/lib/postgres/data/postgresql.conf
 # More settings
 echo 'synchronous_commit = off' >> /var/lib/postgres/data/postgresql.conf
 echo 'work_mem = 64MB' >> /var/lib/postgres/data/postgresql.conf
+
+# pgbouncer
+echo '"postgres" ""' > /etc/pgbouncer/userlist.txt
+chown -R pgbouncer:pgbouncer /etc/pgbouncer
+chmod 640 /etc/pgbouncer/userlist.txt
+systemctl enable pgbouncer.service
 EOF
 
     sudo systemd-nspawn -D "$directory" bash /bootstrap.sh

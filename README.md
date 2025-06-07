@@ -6,8 +6,6 @@ Repo where I mess around with postgres.
 
 Try implementing my own leader election, lease, failover (use etcd or dynamodb local)
 
-pgbouncer on every postgres node (connect to pgbouncer instead of postgres directly). Maybe even only allow local connections on pg_hba.conf (remove 0.0.0.0/0), and only allow pgbouncer connections?
-
 Tech to investigate:
 - Citus
 - Patroni for HA
