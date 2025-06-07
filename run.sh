@@ -129,6 +129,13 @@ EOF
     echo "$name" | sudo tee "$directory/etc/hostname"
 }
 
+build_pgdaemon() {
+    go build -C "$SCRIPT_DIR/pgdaemon" -o "$SCRIPT_DIR/pgdaemon" || {
+        echo "Failed to build pgdaemon"
+        return 1
+    }
+}
+
 setup_postgres() {
     if [[ $# -ne 1 ]]; then
         echo "Usage: setup_postgres <name>"
@@ -152,6 +159,9 @@ pool_mode = transaction
 admin_users = postgres
 server_reset_query = DISCARD ALL
 EOF
+
+    sudo cp "$SCRIPT_DIR/pgdaemon/pgdaemon" "$directory/usr/bin/pgdaemon"
+    sudo cp "$SCRIPT_DIR/pgdaemon/pgdaemon.service" "$directory/etc/systemd/system/"
 
     sudo tee "$directory/bootstrap.sh" > /dev/null <<EOF
 # Initialize data and start services
@@ -180,6 +190,9 @@ echo '"postgres" ""' > /etc/pgbouncer/userlist.txt
 chown -R pgbouncer:pgbouncer /etc/pgbouncer
 chmod 640 /etc/pgbouncer/userlist.txt
 systemctl enable pgbouncer.service
+
+# pgdaemon
+systemctl enable pgdaemon.service
 EOF
 
     sudo systemd-nspawn -D "$directory" bash /bootstrap.sh
@@ -371,6 +384,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 
     setup_lab_network
     create_pgbase_machine
+    build_pgdaemon
 
     create_machine "pg0"
     setup_postgres "pg0"

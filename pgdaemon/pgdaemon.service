@@ -1,0 +1,10 @@
+[Unit]
+Description=Daemon for monitoring postgres
+
+After=network.target pgbouncer.service postgres.service
+
+[Service]
+ExecStart=/usr/bin/pgdaemon
+
+[Install]
+WantedBy=multi-user.target
