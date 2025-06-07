@@ -72,27 +72,6 @@ sed -i 's/^#\(en_US.UTF-8\)/\1/' /etc/locale.gen
 locale-gen
 echo 'LANG=en_US.UTF-8' >/etc/locale.conf
 
-# Set up postgres
-sudo -u postgres initdb --locale=C.UTF-8 --encoding=UTF8 -D /var/lib/postgres/data
-systemctl enable postgresql.service
-
-# Allow connections from all hosts, without password
-echo "host    all             all             0.0.0.0/0            trust" >> /var/lib/postgres/data/pg_hba.conf
-
-# Allow replication from all hosts
-echo "host    replication     all             0.0.0.0/0            trust" >> /var/lib/postgres/data/pg_hba.conf
-
-# Bind to all interfaces
-echo "listen_addresses = '*'" >> /var/lib/postgres/data/postgresql.conf
-
-# More logging
-echo 'log_connections = on' >> /var/lib/postgres/data/postgresql.conf
-echo 'log_hostname = on' >> /var/lib/postgres/data/postgresql.conf
-
-# More settings
-echo 'synchronous_commit = off' >> /var/lib/postgres/data/postgresql.conf
-echo 'work_mem = 64MB' >> /var/lib/postgres/data/postgresql.conf
-
 # SSH
 sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
 sed -i 's/^#\?PermitEmptyPasswords.*/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
@@ -140,6 +119,41 @@ Boot=yes
 EOF
 
     echo "$name" | sudo tee "$directory/etc/hostname"
+}
+
+setup_postgres() {
+    if [[ $# -ne 1 ]]; then
+        echo "Usage: setup_postgres <name>"
+        return 1
+    fi
+
+    local name="$1"
+    local directory="/var/lib/machines/$name"
+
+    sudo tee "$directory/bootstrap.sh" > /dev/null <<EOF
+# Initialize data and start service
+sudo -u postgres initdb --locale=C.UTF-8 --encoding=UTF8 -D /var/lib/postgres/data
+systemctl enable postgresql.service
+
+# Allow connections from all hosts, without password
+echo "host    all             all             0.0.0.0/0            trust" >> /var/lib/postgres/data/pg_hba.conf
+
+# Allow replication from all hosts
+echo "host    replication     all             0.0.0.0/0            trust" >> /var/lib/postgres/data/pg_hba.conf
+
+# Bind to all interfaces
+echo "listen_addresses = '*'" >> /var/lib/postgres/data/postgresql.conf
+
+# More logging
+echo 'log_connections = on' >> /var/lib/postgres/data/postgresql.conf
+echo 'log_hostname = on' >> /var/lib/postgres/data/postgresql.conf
+
+# More settings
+echo 'synchronous_commit = off' >> /var/lib/postgres/data/postgresql.conf
+echo 'work_mem = 64MB' >> /var/lib/postgres/data/postgresql.conf
+EOF
+
+    sudo systemd-nspawn -D "$directory" bash /bootstrap.sh
 }
 
 setup_lab_network() {
@@ -199,7 +213,7 @@ run_pgbench() {
     pgbench -h "$leader" -U postgres -i -s 50 postgres
 
     # Run pgbench for -T seconds with -c clients and -j threads
-    pgbench -h "$leader" -U postgres -c 10 -j 4 -T 20 postgres
+    pgbench -h "$leader" -U postgres -c 10 -j 4 -T 10 postgres
 }
 
 download_imdb_datasets() {
@@ -271,8 +285,12 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 
     setup_lab_network
     create_pgbase_machine
+
     create_machine "pg0" 2
     create_machine "pg1" 3
+
+    setup_postgres "pg0"
+    setup_postgres "pg1"
 
     sudo machinectl start pg0
     sudo machinectl start pg1

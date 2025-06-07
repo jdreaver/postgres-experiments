@@ -11,5 +11,6 @@ Tech to investigate:
 
 # Resources
 
+- https://docs.percona.com/postgresql/17/solutions/ha-setup-apt.html
 - https://cloud.google.com/architecture/architectures-high-availability-postgresql-clusters-compute-engine
 - https://docs.aws.amazon.com/prescriptive-guidance/latest/migration-databases-postgresql-ec2/ha-postgresql-databases-ec2.html
