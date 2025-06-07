@@ -14,6 +14,7 @@ declare -a HOSTS
 HOST_IPS[host]=10.42.0.1; HOSTS+=(host)
 HOST_IPS[pg0]=10.42.0.2; HOSTS+=(pg0)
 HOST_IPS[pg1]=10.42.0.3; HOSTS+=(pg1)
+HOST_IPS[etcd0]=10.42.0.4; HOSTS+=(etcd0)
 
 IP_CIDR_SLASH=24
 
@@ -48,6 +49,13 @@ create_pgbase_machine() {
     sudo mkdir -p "$directory"
 
     sudo pacstrap "${pacstrap_args[@]}" "$directory" "${packages[@]}"
+
+    # Download etcd from https://github.com/etcd-io/etcd/releases/
+    local etcd_version=v3.6.1
+    local filename="etcd-${etcd_version}-linux-amd64.tar.gz"
+    local etcd_url="https://github.com/etcd-io/etcd/releases/download/${etcd_version}/$filename"
+    curl -L "$etcd_url" -o "/tmp/$filename"
+    sudo tar -xzf "/tmp/$filename" -C "$directory/usr/bin" --strip-components=1
 
     # Populate /etc/hosts from HOST_IPS
     for host in "${HOSTS[@]}"; do
@@ -149,6 +157,63 @@ echo 'log_hostname = on' >> /var/lib/postgres/data/postgresql.conf
 # More settings
 echo 'synchronous_commit = off' >> /var/lib/postgres/data/postgresql.conf
 echo 'work_mem = 64MB' >> /var/lib/postgres/data/postgresql.conf
+EOF
+
+    sudo systemd-nspawn -D "$directory" bash /bootstrap.sh
+}
+
+setup_etcd() {
+    if [[ $# -ne 1 ]]; then
+        echo "Usage: setup_etcd <name>"
+        return 1
+    fi
+
+    local name="$1"
+    local directory="/var/lib/machines/$name"
+
+    # Taken from
+    # https://github.com/etcd-io/etcd/blob/main/contrib/systemd/etcd.service
+    # and
+    # https://github.com/etcd-io/etcd/blob/main/contrib/systemd/sysusers.d/20-etcd.conf
+
+    sudo tee "$directory/etc/systemd/system/etcd.service" > /dev/null <<EOF
+[Unit]
+Description=etcd key-value store
+Documentation=https://github.com/etcd-io/etcd
+After=network-online.target local-fs.target remote-fs.target time-sync.target
+Wants=network-online.target local-fs.target remote-fs.target time-sync.target
+
+[Service]
+User=etcd
+Type=notify
+Environment=ETCD_DATA_DIR=/var/lib/etcd
+Environment=ETCD_NAME=%m
+ExecStart=/usr/bin/etcd
+Restart=always
+RestartSec=10s
+LimitNOFILE=40000
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    sudo mkdir -p "$directory/etc/sysusers.d"
+    sudo tee "$directory/etc/sysusers.d/20-etcd.conf" > /dev/null <<EOF
+# etcd - https://github.com/etcd-io/etcd
+
+#Type  Name  ID  GECOS        Home
+u      etcd  -   "etcd user"  /var/lib/etcd
+EOF
+
+    sudo mkdir -p "$directory/etc/tmpfiles.d"
+    sudo tee "$directory/etc/tmpfiles.d/20-etcd.conf" > /dev/null <<EOF
+#Type Path            Mode User Group Age Argument…
+d     /var/lib/etcd   0755 etcd etcd  -   -
+EOF
+
+    sudo tee "$directory/bootstrap.sh" > /dev/null <<EOF
+# Start service
+systemctl enable etcd.service
 EOF
 
     sudo systemd-nspawn -D "$directory" bash /bootstrap.sh
@@ -285,13 +350,16 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     create_pgbase_machine
 
     create_machine "pg0"
-    create_machine "pg1"
-
     setup_postgres "pg0"
-    setup_postgres "pg1"
-
     sudo machinectl start pg0
+
+    create_machine "pg1"
+    setup_postgres "pg1"
     sudo machinectl start pg1
+
+    create_machine "etcd0"
+    setup_etcd "etcd0"
+    sudo machinectl start etcd0
 
     echo "Waiting for startup"
     sleep 5
