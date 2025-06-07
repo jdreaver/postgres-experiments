@@ -12,9 +12,10 @@ declare -A HOST_IPS
 declare -a HOSTS
 
 HOST_IPS[host]=10.42.0.1; HOSTS+=(host)
-HOST_IPS[pg0]=10.42.0.2; HOSTS+=(pg0)
-HOST_IPS[pg1]=10.42.0.3; HOSTS+=(pg1)
-HOST_IPS[etcd0]=10.42.0.4; HOSTS+=(etcd0)
+HOST_IPS[pg0]=10.42.0.10; HOSTS+=(pg0)
+HOST_IPS[pg1]=10.42.0.11; HOSTS+=(pg1)
+HOST_IPS[pg2]=10.42.0.12; HOSTS+=(pg2)
+HOST_IPS[etcd0]=10.42.0.20; HOSTS+=(etcd0)
 
 IP_CIDR_SLASH=24
 
@@ -398,6 +399,10 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     setup_postgres "pg1"
     sudo machinectl start pg1
 
+    create_machine "pg2"
+    setup_postgres "pg2"
+    sudo machinectl start pg2
+
     create_machine "etcd0"
     setup_etcd "etcd0"
     sudo machinectl start etcd0
@@ -406,6 +411,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     sleep 5
 
     setup_replication pg0 pg1
+    setup_replication pg0 pg2
 
     download_imdb_datasets
     populate_imdb_data pg0

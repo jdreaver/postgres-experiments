@@ -4,6 +4,12 @@ Repo where I mess around with postgres.
 
 ## TODO
 
+pgdaemon features:
+- Implement manual failover (not automated) so pgdaemon knows the sequence of events it must do to perform failover
+  - Consider having pgdaemon implement starting `postgresql.service` as well, and do different things depending on leader vs replica
+- Write heartbeats to etcd so others can read self-reported status during leader election
+- Implement leader election
+
 Try implementing my own leader election, lease, failover (use etcd or dynamodb local)
 
 Tech to investigate:
