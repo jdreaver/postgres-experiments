@@ -6,23 +6,16 @@ SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
 
 SSH="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
 
-NETWORK_BASE=10.42.0
-NETWORK_CIDR_SLASH=24
 NETDEV_NAME=pglab0
 
-make_network_ip() {
-    local suffix="$1"
-    if [[ -z "$suffix" ]]; then
-        echo "Usage: make_network_ip <suffix>"
-        return 1
-    fi
+declare -A HOST_IPS
+declare -a HOSTS
 
-    echo "${NETWORK_BASE}.${suffix}"
-}
+HOST_IPS[host]=10.42.0.1; HOSTS+=(host)
+HOST_IPS[pg0]=10.42.0.2; HOSTS+=(pg0)
+HOST_IPS[pg1]=10.42.0.3; HOSTS+=(pg1)
 
-make_network_ip_cidr() {
-    echo "$(make_network_ip "$1")/${NETWORK_CIDR_SLASH}"
-}
+IP_CIDR_SLASH=24
 
 create_pgbase_machine() {
     pacstrap_args=(
@@ -36,6 +29,7 @@ create_pgbase_machine() {
         openssh
 
         bat
+        dnsutils
         eza
         fish
         inetutils
@@ -54,6 +48,11 @@ create_pgbase_machine() {
     sudo mkdir -p "$directory"
 
     sudo pacstrap "${pacstrap_args[@]}" "$directory" "${packages[@]}"
+
+    # Populate /etc/hosts from HOST_IPS
+    for host in "${HOSTS[@]}"; do
+        echo "${HOST_IPS[$host]} $host" | sudo tee -a "$directory/etc/hosts"
+    done
 
     sudo tee "$directory/bootstrap.sh" > /dev/null <<EOF
 # Don't require a password for root in the container
@@ -83,13 +82,12 @@ EOF
 }
 
 create_machine() {
-    if [[ $# -ne 2 ]]; then
-        echo "Usage: create_machine <name> <ip_suffix>"
+    if [[ $# -ne 1 ]]; then
+        echo "Usage: create_machine <name>"
         return 1
     fi
 
     local name="$1"
-    local ip_suffix="$2"
 
     local directory="/var/lib/machines/$name"
 
@@ -103,9 +101,9 @@ create_machine() {
 Name=host0
 
 [Network]
-Address=$(make_network_ip_cidr "$ip_suffix")
-Gateway=$(make_network_ip 1)
-DNS=$(make_network_ip 1)
+Address=${HOST_IPS[$name]}/$IP_CIDR_SLASH
+Gateway=${HOST_IPS[host]}
+DNS=${HOST_IPS[host]}
 DHCP=no
 EOF
 
@@ -170,7 +168,7 @@ EOF
 Name=$NETDEV_NAME
 
 [Network]
-Address=$(make_network_ip_cidr 1)
+Address=${HOST_IPS[host]}/$IP_CIDR_SLASH
 IPForward=yes
 EOF
 
@@ -286,8 +284,8 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     setup_lab_network
     create_pgbase_machine
 
-    create_machine "pg0" 2
-    create_machine "pg1" 3
+    create_machine "pg0"
+    create_machine "pg1"
 
     setup_postgres "pg0"
     setup_postgres "pg1"
