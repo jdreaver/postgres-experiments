@@ -279,16 +279,17 @@ EOF
 
 setup_replication() {
     if [[ $# -ne 2 ]]; then
-        echo "Usage: setup_replication <leader-ip> <follower-ip>"
+        echo "Usage: setup_replication <leader> <follower>"
         return 1
     fi
 
     local leader="$1"
     local follower="$2"
+    local follower_ip="${HOST_IPS[$follower]}"
 
     set -x
 
-    $SSH "root@$follower" "bash -c \"
+    $SSH "root@$follower_ip" "bash -c \"
 set -euo pipefail
 
 systemctl stop postgresql.service
@@ -302,17 +303,18 @@ systemctl status postgresql.service
 
 run_pgbench() {
     if [[ $# -ne 1 ]]; then
-        echo "Usage: run_pgbench <leader-ip"
+        echo "Usage: run_pgbench <leader>"
         return 1
     fi
 
     local leader="$1"
+    local leader_ip="${HOST_IPS[$leader]}"
 
     # Initialize with scale factor -s
-    pgbench -h "$leader" -U postgres -i -s 50 postgres
+    pgbench -h "$leader_ip" -U postgres -i -s 50 postgres
 
     # Run pgbench for -T seconds with -c clients and -j threads
-    pgbench -h "$leader" -U postgres -c 10 -j 4 -T 10 postgres
+    pgbench -h "$leader_ip" -U postgres -c 10 -j 4 -T 10 postgres
 }
 
 download_imdb_datasets() {
@@ -343,7 +345,9 @@ download_imdb_datasets() {
 }
 
 populate_imdb_data() {
-    local leader_ip="$1"
+    local leader="$1"
+
+    local leader_ip="${HOST_IPS[$leader]}"
     local data_dir="$SCRIPT_DIR/imdb-data"
     local psql_cmd="psql -h $leader_ip -U postgres"
 
@@ -358,7 +362,7 @@ populate_imdb_data() {
     copy_tsv() {
         local table_name="$1"
         local file_path="$2"
-        echo "Copying $table_name data from $file_path to database 'imdb' on $leader_ip"
+        echo "Copying $table_name data from $file_path to database 'imdb' on $leader ($leader_ip)..."
         $psql_cmd -d imdb -c "\copy $table_name FROM '$file_path' DELIMITER E'\t' QUOTE E'\b' NULL '\N' CSV HEADER"
     }
 
@@ -401,10 +405,10 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     echo "Waiting for startup"
     sleep 5
 
-    setup_replication 10.42.0.2 10.42.0.3
+    setup_replication pg0 pg1
 
     download_imdb_datasets
-    populate_imdb_data 10.42.0.2
+    populate_imdb_data pg0
 
-    run_pgbench 10.42.0.2
+    run_pgbench pg0
 fi
