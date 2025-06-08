@@ -37,6 +37,7 @@ create_pgbase_machine() {
         eza
         fish
         inetutils
+        jq
         less
         nano
         procs
@@ -162,7 +163,21 @@ server_reset_query = DISCARD ALL
 EOF
 
     sudo cp "$SCRIPT_DIR/pgdaemon/pgdaemon" "$directory/usr/bin/pgdaemon"
-    sudo cp "$SCRIPT_DIR/pgdaemon/pgdaemon.service" "$directory/etc/systemd/system/"
+    sudo tee "$directory/etc/systemd/system/pgdaemon.service" > /dev/null <<EOF
+[Unit]
+Description=Daemon for monitoring postgres
+
+After=network.target pgbouncer.service postgres.service
+
+[Service]
+ExecStart=/usr/bin/pgdaemon -etcd-host etcd0
+Restart=always
+RestartSec=1s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 
     sudo tee "$directory/bootstrap.sh" > /dev/null <<EOF
 # Initialize data and start services
