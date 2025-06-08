@@ -10,41 +10,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
-
-type HealthResponse struct {
-	PostgresOK   bool   `json:"postgres_ok"`
-	PostgresErr  string `json:"postgres_error,omitempty"`
-	PgBouncerOK  bool   `json:"pgbouncer_ok"`
-	PgBouncerErr string `json:"pgbouncer_error,omitempty"`
-}
-
-func checkDB(host string, port int, user string, connTimeout time.Duration) (bool, string) {
-	ctx, cancel := context.WithTimeout(context.Background(), connTimeout)
-	defer cancel()
-
-	// N.B. default_query_exec_mode=exec because the default uses
-	// statement caching, which doesn't work with pgbouncer.
-	dsn := fmt.Sprintf("postgres://%s@%s:%d/?sslmode=disable&default_query_exec_mode=exec", user, host, port)
-	conn, err := pgx.Connect(ctx, dsn)
-	if err != nil {
-		return false, fmt.Sprintf("connect error: %v", err)
-	}
-	defer conn.Close(ctx)
-
-	var n int
-	err = conn.QueryRow(ctx, "SELECT 1").Scan(&n)
-	if err != nil {
-		return false, fmt.Sprintf("query error: %v", err)
-	}
-	if n != 1 {
-		return false, "unexpected result from SELECT 1"
-	}
-
-	return true, ""
-}
 
 func main() {
 	etcdHost := flag.String("etcd-host", "127.0.0.1", "etcd host")
@@ -79,7 +46,7 @@ func main() {
 	}
 	defer cli.Close()
 
-	election, err := NewEtcdBackend(cli, *clusterName, *nodeName, *leaseDuration)
+	etcd, err := NewEtcdBackend(cli, *clusterName, *nodeName, *leaseDuration)
 	if err != nil {
 		log.Fatalf("Failed to create election: %v", err)
 	}
@@ -89,9 +56,25 @@ func main() {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
-			err := election.RunElection(ctx)
+			// Leader election
+			err := etcd.RunElection(ctx)
 			if err != nil {
 				log.Printf("Election error: %v", err)
+			}
+
+			// Write node state
+			state, err := fetchPostgresNodeState(*pgHost, *pgPort, *pgUser, 2*time.Second)
+			if err != nil {
+				log.Printf("Failed to fetch Postgres node state: %v", err)
+				errString := err.Error()
+				state = &PostgresNodeState{
+					Error: &errString,
+				}
+			}
+
+			err = etcd.WriteNodeState(ctx, state)
+			if err != nil {
+				log.Printf("Failed to write node state: %v", err)
 			}
 
 			time.Sleep(1 * time.Second)
@@ -104,9 +87,9 @@ func main() {
 
 		resp := HealthResponse{
 			PostgresOK:   pgOK,
-			PostgresErr:  pgErr,
+			PostgresErr:  pgErr.Error(),
 			PgBouncerOK:  pbOK,
-			PgBouncerErr: pbErr,
+			PgBouncerErr: pbErr.Error(),
 		}
 
 		status := http.StatusOK

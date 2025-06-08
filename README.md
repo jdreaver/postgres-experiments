@@ -6,12 +6,8 @@ Repo where I mess around with postgres.
 
 pgdaemon features:
 - Record postgres information in etcd (and eventually in DynamoDB)
-  - Don't have election prefix. Have `clusterPrefix` and have election prefix but clusterPrefix + `/election`
   - Health of node's postgres instance
-  - Whether or not current instance thinks it is a primary or replica
-  - Current node's replica lag
-  - If current node is primary, then primary's opinion of replica lag
-  - Leader can also write its opinion of entire node's state, using self-reported state from other nodes
+  - Leader can also write its opinion of entire cluster's state, using self-reported state from other nodes
     - For example, it can tell replicas which node they should reconfigure to follow (`primary_conninfo`). Remember that pgdaemon leader is different from the primary! (Though they should eventually be the same, probably)
 - Nodes should ping one another so they can determine if etcd/DDB is down. If all nodes can be contacted, then continue as usual (sans leader elections). Especially important for primary. If primary can still contact a majority of replicas, then don't step down. If it can't, then step down.
 - Write thorough tests, perhaps with a real backend, and with a mock backend with mocked time

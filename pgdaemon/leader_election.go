@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -217,4 +218,17 @@ func (e *EtcdBackend) IsLeader() bool {
 		return false
 	}
 	return true
+}
+
+func (etcd *EtcdBackend) WriteNodeState(ctx context.Context, state *PostgresNodeState) error {
+	stateBytes, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("failed to marshal node state: %w", err)
+	}
+	_, err = etcd.client.Put(ctx, etcd.clusterPrefix()+"/node_state/"+etcd.nodeName, string(stateBytes))
+	if err != nil {
+		return fmt.Errorf("failed to write node state to etcd: %w", err)
+	}
+
+	return nil
 }
