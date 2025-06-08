@@ -50,8 +50,7 @@ type EtcdElection struct {
 	// the hostname).
 	nodeName string
 
-	etcdHost          string
-	etcdPort          string
+	client            *clientv3.Client
 	leaseDuration     time.Duration
 	lastObservedLease *observedLease
 }
@@ -61,27 +60,17 @@ const etcdLeaderKey = "/leader"
 const etcdDurationKey = "/lease_duration_ms"
 
 // TODO: Too many string arguments
-func NewEtcdElection(electionPrefix string, etcdHost string, etcdPort string, nodeName string, leaseDuration time.Duration) *EtcdElection {
+func NewEtcdElection(client *clientv3.Client, electionPrefix string, nodeName string, leaseDuration time.Duration) (*EtcdElection, error) {
 	return &EtcdElection{
 		electionPrefix: electionPrefix,
-		etcdHost:       etcdHost,
-		etcdPort:       etcdPort,
+		client:         client,
 		nodeName:       nodeName,
 		leaseDuration:  leaseDuration,
-	}
+	}, nil
 }
 
 func (etcd *EtcdElection) RunElection(ctx context.Context) error {
-	cli, err := clientv3.New(clientv3.Config{
-		Endpoints:   []string{fmt.Sprintf("%s:%s", etcd.etcdHost, etcd.etcdPort)},
-		DialTimeout: 2 * time.Second,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to connect to etcd: %w", err)
-	}
-	defer cli.Close()
-
-	err = etcd.updateObservedLease(ctx, *cli)
+	err := etcd.updateObservedLease(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to update observed lease: %w", err)
 	}
@@ -104,7 +93,7 @@ func (etcd *EtcdElection) RunElection(ctx context.Context) error {
 			compare = clientv3.Compare(clientv3.Value(etcd.electionPrefix+etcdRvnKey), "=", lastRVN.String())
 		}
 
-		txn := cli.Txn(ctx)
+		txn := etcd.client.Txn(ctx)
 		txnResp, err := txn.If(
 			compare,
 		).Then(
@@ -126,8 +115,8 @@ func (etcd *EtcdElection) RunElection(ctx context.Context) error {
 	return nil
 }
 
-func (etcd *EtcdElection) updateObservedLease(ctx context.Context, cli clientv3.Client) error {
-	lease, err := etcd.fetchLease(ctx, cli)
+func (etcd *EtcdElection) updateObservedLease(ctx context.Context) error {
+	lease, err := etcd.fetchLease(ctx)
 	if err != nil {
 		etcd.lastObservedLease = nil
 		return fmt.Errorf("failed to fetch lease: %w", err)
@@ -172,8 +161,8 @@ func (etcd *EtcdElection) updateObservedLease(ctx context.Context, cli clientv3.
 	return nil
 }
 
-func (etcd *EtcdElection) fetchLease(ctx context.Context, cli clientv3.Client) (*lease, error) {
-	getResp, err := cli.Get(ctx, etcd.electionPrefix, clientv3.WithPrefix())
+func (etcd *EtcdElection) fetchLease(ctx context.Context) (*lease, error) {
+	getResp, err := etcd.client.Get(ctx, etcd.electionPrefix, clientv3.WithPrefix())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get election key from etcd: %w", err)
 	}

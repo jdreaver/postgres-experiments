@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 type HealthResponse struct {
@@ -68,11 +69,23 @@ func main() {
 		*nodeName = hostname
 	}
 
-	election := NewEtcdElection("/election", *etcdHost, *etcdPort, *nodeName, *leaseDuration)
+	cli, err := clientv3.New(clientv3.Config{
+		Endpoints:   []string{fmt.Sprintf("%s:%s", *etcdHost, *etcdPort)},
+		DialTimeout: 2 * time.Second,
+	})
+	if err != nil {
+		log.Fatalf("failed to connect to etcd: %w", err)
+	}
+	defer cli.Close()
+
+	election, err := NewEtcdElection(cli, "/election", *nodeName, *leaseDuration)
+	if err != nil {
+		log.Fatalf("Failed to create election: %v", err)
+	}
 
 	go func() {
 		for {
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
 
 			err := election.RunElection(ctx)

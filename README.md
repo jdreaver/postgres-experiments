@@ -5,13 +5,22 @@ Repo where I mess around with postgres.
 ## TODO
 
 pgdaemon features:
-- Consider letting any node win the election if the primary fails, and have that node simply be the coordinator for fencing off the primary (make sure it is dead) and then picking the node with the smallest replica lag to be the new actual leader. (It gives up its leadership specifically to the other replica with the lowest lag.)
+- Record postgres information in etcd (and eventually in DynamoDB)
+  - Don't have election prefix. Have `clusterPrefix` and have election prefix but clusterPrefix + `/election`
+  - Health of node's postgres instance
+  - Whether or not current instance thinks it is a primary or replica
+  - Current node's replica lag
+  - If current node is primary, then primary's opinion of replica lag
+  - Leader can also write its opinion of entire node's state, using self-reported state from other nodes
+    - For example, it can tell replicas which node they should reconfigure to follow (`primary_conninfo`). Remember that pgdaemon leader is different from the primary! (Though they should eventually be the same, probably)
+- Nodes should ping one another so they can determine if etcd/DDB is down. If all nodes can be contacted, then continue as usual (sans leader elections). Especially important for primary. If primary can still contact a majority of replicas, then don't step down. If it can't, then step down.
+- Write thorough tests, perhaps with a real backend, and with a mock backend with mocked time
+- Let any node win the election if the primary fails, and have that node simply be the coordinator for fencing off the primary (make sure it is dead) and then picking the node with the smallest replica lag to be the new actual leader. (It gives up its leadership specifically to the other replica with the lowest lag.)
+- DynamoDB backend (just abstract common bits from etcd backend)
 - Implement manual failover (not automated) so pgdaemon knows the sequence of events it must do to perform failover
   - Consider having pgdaemon implement starting `postgresql.service` as well, and do different things depending on leader vs replica
 - Write heartbeats to etcd so others can read self-reported status during leader election
 - Implement leader election
-
-Try implementing my own leader election, lease, failover (use etcd or dynamodb local)
 
 Tech to investigate:
 - Citus
