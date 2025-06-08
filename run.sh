@@ -225,6 +225,9 @@ User=etcd
 Type=notify
 Environment=ETCD_DATA_DIR=/var/lib/etcd
 Environment=ETCD_NAME=%m
+Environment=ETCD_LISTEN_CLIENT_URLS="http://0.0.0.0:2379"
+Environment=ETCD_LISTEN_PEER_URLS="http://0.0.0.0:2380"
+Environment=ETCD_ADVERTISE_CLIENT_URLS="http://%H:2379,https://%H:4001,http://${HOST_IPS[$name]}:2379,https://${HOST_IPS[$name]}:4001"
 ExecStart=/usr/bin/etcd
 Restart=always
 RestartSec=10s
