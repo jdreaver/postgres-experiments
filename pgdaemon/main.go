@@ -68,7 +68,7 @@ func main() {
 		*nodeName = hostname
 	}
 
-	election := NewEtcdElection("/the-election", *etcdHost, *etcdPort, *nodeName, *leaseDuration)
+	election := NewEtcdElection("/election", *etcdHost, *etcdPort, *nodeName, *leaseDuration)
 
 	go func() {
 		for {
