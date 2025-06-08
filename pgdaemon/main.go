@@ -70,10 +70,16 @@ func main() {
 	}
 	defer etcdCli.Close()
 
-	sessionCtx, cancel := context.WithTimeout(context.Background(), *etcdTtl)
+	// Check that connection to etcd is successful. For some reason
+	// DialTimeout is totally ignored, so we have to manually check.
+	ctx, cancel := context.WithTimeout(context.Background(), *etcdTtl)
 	defer cancel()
 
-	session, err := concurrency.NewSession(etcdCli, concurrency.WithTTL(int(etcdTtl.Seconds())), concurrency.WithContext(sessionCtx))
+	if _, err := etcdCli.Get(ctx, "/"); err != nil {
+		log.Fatal(fmt.Errorf("failed to get root key from etcd: %w", err))
+	}
+
+	session, err := concurrency.NewSession(etcdCli, concurrency.WithTTL(int(etcdTtl.Seconds())))
 	if err != nil {
 		log.Fatal(err)
 	}
