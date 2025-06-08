@@ -39,3 +39,11 @@ AWS/DynamoDB:
 - https://aws.amazon.com/blogs/database/building-distributed-locks-with-the-dynamodb-lock-client/
 - https://github.com/awslabs/amazon-dynamodb-lock-client
 - https://aws.amazon.com/builders-library/leader-election-in-distributed-systems/
+
+## Useful etcd commands
+
+See all keys/values:
+
+```
+$ watch -n 0.1 etcdctl get '""' --prefix
+```

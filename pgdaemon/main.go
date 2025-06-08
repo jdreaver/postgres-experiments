@@ -25,7 +25,6 @@ func main() {
 	pbPort := flag.Int("pgbouncer-port", 6432, "PgBouncer port")
 	pgUser := flag.String("pguser", "postgres", "PostgreSQL user")
 	addr := flag.String("listen", ":8080", "Address to listen on")
-	connTimeout := flag.Duration("conn-timeout", 2*time.Second, "Connection timeout")
 
 	flag.Parse()
 
@@ -63,7 +62,7 @@ func main() {
 			}
 
 			// Write node state
-			state, err := fetchPostgresNodeState(*pgHost, *pgPort, *pgUser, 2*time.Second)
+			state, err := fetchPostgresNodeState(*pgHost, *pgPort, *pgUser, 500*time.Millisecond)
 			if err != nil {
 				log.Printf("Failed to fetch Postgres node state: %v", err)
 				errString := err.Error()
@@ -82,8 +81,9 @@ func main() {
 	}()
 
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		pgOK, pgErr := checkDB(*pgHost, *pgPort, *pgUser, *connTimeout)
-		pbOK, pbErr := checkDB(*pbHost, *pbPort, *pgUser, *connTimeout)
+		timeout := 500 * time.Millisecond
+		pgOK, pgErr := checkDB(*pgHost, *pgPort, *pgUser, timeout)
+		pbOK, pbErr := checkDB(*pbHost, *pbPort, *pgUser, timeout)
 
 		resp := HealthResponse{
 			PostgresOK:   pgOK,
