@@ -21,6 +21,7 @@ func connectPostgres(ctx context.Context, host string, port int, user string) (*
 
 type PostgresNodeState struct {
 	Error             *string                 `json:"error,omitempty"`
+	NodeTime          *string                 `json:"node_time,omitempty"`
 	IsPrimary         *bool                   `json:"is_primary,omitempty"`
 	PgStatReplicas    []PostgresPgStatReplica `json:"pg_stat_replicas,omitempty"`
 	PgStatWalReceiver *PgStatWalReceiver      `json:"pg_stat_wal_receiver,omitempty"`
@@ -61,12 +62,12 @@ func fetchPostgresNodeState(host string, port int, user string, connTimeout time
 	}
 	defer conn.Close(ctx)
 
-	var isPrimary bool
-	if err := conn.QueryRow(ctx, "SELECT NOT pg_is_in_recovery()").Scan(&isPrimary); err != nil {
+	var state PostgresNodeState
+	if err := conn.QueryRow(ctx, "SELECT now(), NOT pg_is_in_recovery()").Scan(&state.NodeTime, &state.IsPrimary); err != nil {
 		return nil, fmt.Errorf("check pg_is_in_recovery: %w", err)
 	}
 
-	if isPrimary {
+	if *state.IsPrimary {
 		rows, err := conn.Query(ctx, `
 			SELECT client_hostname, client_addr, client_port, state, sent_lsn,
 			       write_lsn, flush_lsn, replay_lsn, write_lag, flush_lag,
@@ -77,7 +78,6 @@ func fetchPostgresNodeState(host string, port int, user string, connTimeout time
 		}
 		defer rows.Close()
 
-		var replicas []PostgresPgStatReplica
 		for rows.Next() {
 			var r PostgresPgStatReplica
 			if err := rows.Scan(
@@ -88,13 +88,10 @@ func fetchPostgresNodeState(host string, port int, user string, connTimeout time
 			); err != nil {
 				return nil, fmt.Errorf("scan pg_stat_replication row: %w", err)
 			}
-			replicas = append(replicas, r)
+			state.PgStatReplicas = append(state.PgStatReplicas, r)
 		}
 
-		return &PostgresNodeState{
-			IsPrimary:      &isPrimary,
-			PgStatReplicas: replicas,
-		}, nil
+		return &state, nil
 	}
 
 	var receiver PgStatWalReceiver
@@ -108,11 +105,8 @@ func fetchPostgresNodeState(host string, port int, user string, connTimeout time
 	); err != nil {
 		return nil, fmt.Errorf("query pg_stat_wal_receiver: %w", err)
 	}
-
-	return &PostgresNodeState{
-		IsPrimary:         &isPrimary,
-		PgStatWalReceiver: &receiver,
-	}, nil
+	state.PgStatWalReceiver = &receiver
+	return &state, nil
 }
 
 type HealthResponse struct {
