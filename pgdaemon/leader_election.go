@@ -42,9 +42,8 @@ func (e *observedLease) IsExpired() bool {
 	return time.Since(e.seen) > lockDuration
 }
 
-type EtcdElection struct {
-	// electionPrefix is the prefix for the election key in etcd.
-	electionPrefix string
+type EtcdBackend struct {
+	clusterName string
 
 	// nodeName is the name of this node in the election (usually
 	// the hostname).
@@ -60,16 +59,24 @@ const etcdLeaderKey = "/leader"
 const etcdDurationKey = "/lease_duration_ms"
 
 // TODO: Too many string arguments
-func NewEtcdElection(client *clientv3.Client, electionPrefix string, nodeName string, leaseDuration time.Duration) (*EtcdElection, error) {
-	return &EtcdElection{
-		electionPrefix: electionPrefix,
-		client:         client,
-		nodeName:       nodeName,
-		leaseDuration:  leaseDuration,
+func NewEtcdBackend(client *clientv3.Client, clusterName string, nodeName string, leaseDuration time.Duration) (*EtcdBackend, error) {
+	return &EtcdBackend{
+		clusterName:   clusterName,
+		client:        client,
+		nodeName:      nodeName,
+		leaseDuration: leaseDuration,
 	}, nil
 }
 
-func (etcd *EtcdElection) RunElection(ctx context.Context) error {
+func (etcd *EtcdBackend) clusterPrefix() string {
+	return "/" + etcd.clusterName
+}
+
+func (etcd *EtcdBackend) electionPrefix() string {
+	return etcd.clusterPrefix() + "/election"
+}
+
+func (etcd *EtcdBackend) RunElection(ctx context.Context) error {
 	err := etcd.updateObservedLease(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to update observed lease: %w", err)
@@ -87,19 +94,19 @@ func (etcd *EtcdElection) RunElection(ctx context.Context) error {
 		newRVN := uuid.New()
 
 		// By default, assume previous lease doesn't exist
-		compare := clientv3.Compare(clientv3.CreateRevision(etcd.electionPrefix+etcdRvnKey), "=", 0)
+		compare := clientv3.Compare(clientv3.CreateRevision(etcd.electionPrefix()+etcdRvnKey), "=", 0)
 		if etcd.lastObservedLease != nil {
 			lastRVN := etcd.lastObservedLease.lease.revisionVersionNumber
-			compare = clientv3.Compare(clientv3.Value(etcd.electionPrefix+etcdRvnKey), "=", lastRVN.String())
+			compare = clientv3.Compare(clientv3.Value(etcd.electionPrefix()+etcdRvnKey), "=", lastRVN.String())
 		}
 
 		txn := etcd.client.Txn(ctx)
 		txnResp, err := txn.If(
 			compare,
 		).Then(
-			clientv3.OpPut(etcd.electionPrefix+etcdRvnKey, newRVN.String()),
-			clientv3.OpPut(etcd.electionPrefix+etcdLeaderKey, etcd.nodeName),
-			clientv3.OpPut(etcd.electionPrefix+etcdDurationKey, fmt.Sprintf("%d", etcd.leaseDuration.Milliseconds())),
+			clientv3.OpPut(etcd.electionPrefix()+etcdRvnKey, newRVN.String()),
+			clientv3.OpPut(etcd.electionPrefix()+etcdLeaderKey, etcd.nodeName),
+			clientv3.OpPut(etcd.electionPrefix()+etcdDurationKey, fmt.Sprintf("%d", etcd.leaseDuration.Milliseconds())),
 		).Commit()
 		if err != nil {
 			return fmt.Errorf("failed to commit transaction: %w", err)
@@ -115,7 +122,7 @@ func (etcd *EtcdElection) RunElection(ctx context.Context) error {
 	return nil
 }
 
-func (etcd *EtcdElection) updateObservedLease(ctx context.Context) error {
+func (etcd *EtcdBackend) updateObservedLease(ctx context.Context) error {
 	lease, err := etcd.fetchLease(ctx)
 	if err != nil {
 		etcd.lastObservedLease = nil
@@ -161,8 +168,8 @@ func (etcd *EtcdElection) updateObservedLease(ctx context.Context) error {
 	return nil
 }
 
-func (etcd *EtcdElection) fetchLease(ctx context.Context) (*lease, error) {
-	getResp, err := etcd.client.Get(ctx, etcd.electionPrefix, clientv3.WithPrefix())
+func (etcd *EtcdBackend) fetchLease(ctx context.Context) (*lease, error) {
+	getResp, err := etcd.client.Get(ctx, etcd.electionPrefix(), clientv3.WithPrefix())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get election key from etcd: %w", err)
 	}
@@ -173,14 +180,14 @@ func (etcd *EtcdElection) fetchLease(ctx context.Context) (*lease, error) {
 
 	var lease lease
 	for _, kv := range getResp.Kvs {
-		if string(kv.Key) == etcd.electionPrefix+etcdRvnKey {
+		if string(kv.Key) == etcd.electionPrefix()+etcdRvnKey {
 			lease.revisionVersionNumber, err = uuid.Parse(string(kv.Value))
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse RVN: %w", err)
 			}
-		} else if string(kv.Key) == etcd.electionPrefix+etcdLeaderKey {
+		} else if string(kv.Key) == etcd.electionPrefix()+etcdLeaderKey {
 			lease.leader = string(kv.Value)
-		} else if string(kv.Key) == etcd.electionPrefix+etcdDurationKey {
+		} else if string(kv.Key) == etcd.electionPrefix()+etcdDurationKey {
 			var duration int64
 			_, err := fmt.Sscanf(string(kv.Value), "%d", &duration)
 			if err != nil {
@@ -198,7 +205,7 @@ func (etcd *EtcdElection) fetchLease(ctx context.Context) (*lease, error) {
 	return &lease, nil
 }
 
-func (e *EtcdElection) IsLeader() bool {
+func (e *EtcdBackend) IsLeader() bool {
 	if e.lastObservedLease == nil {
 		return false
 	}

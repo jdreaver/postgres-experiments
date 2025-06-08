@@ -51,6 +51,7 @@ func main() {
 	etcdPort := flag.String("etcd-port", "2379", "etcd port")
 	leaseDuration := flag.Duration("lease-duration", 5*time.Second, "Lease duration for leader election")
 	nodeName := flag.String("node-name", "", "Name of this node in the election (defaults to hostname)")
+	clusterName := flag.String("cluster-name", "my-cluster", "Name of the postgres cluster")
 	pgHost := flag.String("postgres-host", "127.0.0.1", "PostgreSQL host")
 	pgPort := flag.Int("postgres-port", 5432, "PostgreSQL port")
 	pbHost := flag.String("pgbouncer-host", "127.0.0.1", "PgBouncer host")
@@ -74,11 +75,11 @@ func main() {
 		DialTimeout: 2 * time.Second,
 	})
 	if err != nil {
-		log.Fatalf("failed to connect to etcd: %w", err)
+		log.Fatal(fmt.Errorf("failed to connect to etcd: %w", err))
 	}
 	defer cli.Close()
 
-	election, err := NewEtcdElection(cli, "/election", *nodeName, *leaseDuration)
+	election, err := NewEtcdBackend(cli, *clusterName, *nodeName, *leaseDuration)
 	if err != nil {
 		log.Fatalf("Failed to create election: %v", err)
 	}
