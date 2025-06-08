@@ -11,8 +11,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/client/v3/concurrency"
 )
 
 type HealthResponse struct {
@@ -50,7 +48,8 @@ func checkDB(host string, port int, user string, connTimeout time.Duration) (boo
 func main() {
 	etcdHost := flag.String("etcd-host", "127.0.0.1", "etcd host")
 	etcdPort := flag.String("etcd-port", "2379", "etcd port")
-	etcdTtl := flag.Duration("etcd-ttl", 5*time.Second, "etcd lease TTL")
+	leaseDuration := flag.Duration("lease-duration", 5*time.Second, "Lease duration for leader election")
+	nodeName := flag.String("node-name", "", "Name of this node in the election (defaults to hostname)")
 	pgHost := flag.String("postgres-host", "127.0.0.1", "PostgreSQL host")
 	pgPort := flag.Int("postgres-port", 5432, "PostgreSQL port")
 	pbHost := flag.String("pgbouncer-host", "127.0.0.1", "PgBouncer host")
@@ -61,68 +60,25 @@ func main() {
 
 	flag.Parse()
 
-	etcdCli, err := clientv3.New(clientv3.Config{
-		Endpoints:   []string{fmt.Sprintf("%s:%s", *etcdHost, *etcdPort)},
-		DialTimeout: 5 * time.Second,
-	})
-	if err != nil {
-		log.Fatal(fmt.Errorf("failed to connect to etcd: %w", err))
-	}
-	defer etcdCli.Close()
-
-	// Check that connection to etcd is successful. For some reason
-	// DialTimeout is totally ignored, so we have to manually check.
-	ctx, cancel := context.WithTimeout(context.Background(), *etcdTtl)
-	defer cancel()
-
-	if _, err := etcdCli.Get(ctx, "/"); err != nil {
-		log.Fatal(fmt.Errorf("failed to get root key from etcd: %w", err))
-	}
-
-	session, err := concurrency.NewSession(etcdCli, concurrency.WithTTL(int(etcdTtl.Seconds())))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer session.Close()
-
-	election := concurrency.NewElection(session, "/my-election")
-
-	// Observe current leader
-	obsCh := election.Observe(context.Background()) // streams leadership changes
-
-	go func() {
-		for resp := range obsCh {
-			fmt.Println("Leader changed to:", string(resp.Kvs[0].Value))
+	if *nodeName == "" {
+		hostname, err := os.Hostname()
+		if err != nil {
+			log.Fatal(fmt.Errorf("failed to get hostname: %w", err))
 		}
-	}()
-
-	hostname, err := os.Hostname()
-	if err != nil {
-		log.Fatal(fmt.Errorf("failed to get hostname: %w", err))
+		*nodeName = hostname
 	}
 
+	election := NewEtcdElection("/the-election", *etcdHost, *etcdPort, *nodeName, *leaseDuration)
+
 	go func() {
-		ctx := context.Background()
-
 		for {
-			err := election.Campaign(ctx, hostname)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+
+			err := election.RunElection(ctx)
 			if err != nil {
-				log.Printf("Campaign error: %v", err)
-				time.Sleep(time.Second)
-				continue
+				log.Printf("Election error: %v", err)
 			}
-
-			// On success
-			log.Println("Acquired leadership")
-
-			// TODO: Monitor session.Done() channel to see
-			// if we lost leader
-
-			time.Sleep(10 * time.Second)
-
-			// When done
-			election.Resign(ctx)
-			log.Println("Resigned leadership")
 
 			time.Sleep(1 * time.Second)
 		}
