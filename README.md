@@ -4,14 +4,29 @@ Repo where I mess around with postgres.
 
 ## TODO
 
+Have pgdaemon configure replica and start postgres instead of doing it with startup scripts. Seed desired state in etcd somehow and use that when booting.
+
+Frontend load balancer that uses pgdaemon health checks (overall health, as well as special endpoints for `/primary` and `/replica` for read/write and read-only connections)
+- Can use HAProxy locally
+
+pgdaemon architecture ideas:
+- Dumb control loops. Each pgdaemon is a "controller" for its node, and the pgdaemon leader is the "controller" as well as "operator" for the cluster.
+  - The leader can put desired node states into etcd, and each pgdaemon reconciles the desired state with the actual node state.
+  - Special case of fencing: if node pgdaemon is not responding, leader can take actions to try and kill a node externally.
+- Any pgdaemon can accept user commands and influence desired state by putting it into etcd, like "perform a failover" or even "perform a failover to node X"
+- Leader pgdaemon performs cluster-wide operations, like determining which nodes are healthy, specifying if we should do a failover (including picking the node to fail over to based on replica lag after stopping traffic to the primary and picking the standby with the lowest lag), telling nodes to pg_rewind, running migrations, etc.
+- Leader only does things that _require_ a single leader. Otherwise each node's pgdaemon performs its own actions.
+- spec vs status, like k8s. Daemons can report if they are up to date with their spec.
+- Consider using watches in addition to fallback loops instead of polling so aggressively. Watches can help actually decrease reaction time.
+  - Or, just be smarter about loop duration. Slow down when things are healthy and speed up when not?
+- Pure logic and internal state cache to support testing of decisions, state transitions, etc.
+- Remember to use local clocks for measuring elapsed time.
+- Have leader clear out stale node state (e.g. old nodes that have dropped)
+- Record important events, either with a well known log line identifier or in etcd/DDB (like the k8s Events API). Things like health check failures, failover starts/ends, manual failover, etc.
+
 pgdaemon features:
-- Record postgres information in etcd (and eventually in DynamoDB)
-  - Health of node's postgres instance
-  - Leader can also write its opinion of entire cluster's state, using self-reported state from other nodes
-    - For example, it can tell replicas which node they should reconfigure to follow (`primary_conninfo`). Remember that pgdaemon leader is different from the primary! (Though they should eventually be the same, probably)
 - Nodes should ping one another so they can determine if etcd/DDB is down. If all nodes can be contacted, then continue as usual (sans leader elections). Especially important for primary. If primary can still contact a majority of replicas, then don't step down. If it can't, then step down.
 - Write thorough tests, perhaps with a real backend, and with a mock backend with mocked time
-- Let any node win the election if the primary fails, and have that node simply be the coordinator for fencing off the primary (make sure it is dead) and then picking the node with the smallest replica lag to be the new actual leader. (It gives up its leadership specifically to the other replica with the lowest lag.)
 - DynamoDB backend (just abstract common bits from etcd backend)
 - Implement manual failover (not automated) so pgdaemon knows the sequence of events it must do to perform failover
   - Consider having pgdaemon implement starting `postgresql.service` as well, and do different things depending on leader vs replica
@@ -34,10 +49,12 @@ Settings to investigate:
 - https://docs.percona.com/postgresql/17/solutions/ha-setup-apt.html
 - https://cloud.google.com/architecture/architectures-high-availability-postgresql-clusters-compute-engine
 - https://docs.aws.amazon.com/prescriptive-guidance/latest/migration-databases-postgresql-ec2/ha-postgresql-databases-ec2.html
+- [CrunchyData postgres operator](https://access.crunchydata.com/documentation/postgres-operator/latest)
 
 ## Leader Election
 
 AWS/DynamoDB:
+
 - https://aws.amazon.com/blogs/database/building-distributed-locks-with-the-dynamodb-lock-client/
 - https://github.com/awslabs/amazon-dynamodb-lock-client
 - https://aws.amazon.com/builders-library/leader-election-in-distributed-systems/
