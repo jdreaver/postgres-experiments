@@ -21,6 +21,10 @@ Physical vs logical replication
 - Anything that requires logical replication (shard splits, complex migrations, vacuum full, etc) requires logically replicating from the primary physical group to another node. This combination is a "logical replication group"
   - Once we are ready to switch over to the logically-replicated node, we can spin up 1+ replicas right beforehand, making it HA.
 
+Settings to investigate:
+- `recovery_target_*` stuff https://www.postgresql.org/docs/current/runtime-config-wal.html#RUNTIME-CONFIG-WAL-RECOVERY-TARGET
+- `hot_standby_feedback`, specifically for chained logical replication https://www.postgresql.org/docs/current/runtime-config-replication.html#RUNTIME-CONFIG-REPLICATION-STANDBY
+
 # Resources
 
 ## Postgres HA

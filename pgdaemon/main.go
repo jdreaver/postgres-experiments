@@ -11,6 +11,7 @@ import (
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -36,6 +37,9 @@ func main() {
 		*nodeName = hostname
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:   []string{fmt.Sprintf("%s:%s", *etcdHost, *etcdPort)},
 		DialTimeout: 2 * time.Second,
@@ -50,58 +54,86 @@ func main() {
 		log.Fatalf("Failed to create election: %v", err)
 	}
 
-	go func() {
+	// Use errgroup for goroutine lifecycle management
+	g, ctx := errgroup.WithContext(ctx)
+
+	// Election loop
+	g.Go(func() error {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
 		for {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+				// Election logic
+				eCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+				err := etcd.RunElection(eCtx)
+				cancel()
+				if err != nil {
+					log.Printf("Election error: %v", err)
+				}
 
-			// Leader election
-			err := etcd.RunElection(ctx)
-			if err != nil {
-				log.Printf("Election error: %v", err)
-			}
+				// Fetch state
+				state, err := fetchPostgresNodeState(*pgHost, *pgPort, *pgUser, 500*time.Millisecond)
+				if err != nil {
+					log.Printf("Failed to fetch Postgres node state: %v", err)
+					errStr := err.Error()
+					state = &PostgresNodeState{Error: &errStr}
+				}
 
-			// Write node state
-			state, err := fetchPostgresNodeState(*pgHost, *pgPort, *pgUser, 500*time.Millisecond)
-			if err != nil {
-				log.Printf("Failed to fetch Postgres node state: %v", err)
-				errString := err.Error()
-				state = &PostgresNodeState{
-					Error: &errString,
+				// Write state to etcd
+				wCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+				err = etcd.WriteNodeState(wCtx, state)
+				cancel()
+				if err != nil {
+					log.Printf("Failed to write node state: %v", err)
 				}
 			}
-
-			err = etcd.WriteNodeState(ctx, state)
-			if err != nil {
-				log.Printf("Failed to write node state: %v", err)
-			}
-
-			time.Sleep(1 * time.Second)
 		}
-	}()
-
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		timeout := 500 * time.Millisecond
-		pgOK, pgErr := checkDB(*pgHost, *pgPort, *pgUser, timeout)
-		pbOK, pbErr := checkDB(*pbHost, *pbPort, *pgUser, timeout)
-
-		resp := HealthResponse{
-			PostgresOK:   pgOK,
-			PostgresErr:  pgErr.Error(),
-			PgBouncerOK:  pbOK,
-			PgBouncerErr: pbErr.Error(),
-		}
-
-		status := http.StatusOK
-		if !pgOK || !pbOK {
-			status = http.StatusServiceUnavailable
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		json.NewEncoder(w).Encode(resp)
 	})
 
-	log.Printf("Listening on %s", *addr)
-	log.Fatal(http.ListenAndServe(*addr, nil))
+	// HTTP server for health checks
+	g.Go(func() error {
+		srv := &http.Server{
+			Addr: *addr,
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				timeout := 500 * time.Millisecond
+				pgOK, pgErr := checkDB(*pgHost, *pgPort, *pgUser, timeout)
+				pbOK, pbErr := checkDB(*pbHost, *pbPort, *pgUser, timeout)
+
+				resp := HealthResponse{
+					PostgresOK:   pgOK,
+					PostgresErr:  pgErr.Error(),
+					PgBouncerOK:  pbOK,
+					PgBouncerErr: pbErr.Error(),
+				}
+
+				status := http.StatusOK
+				if !pgOK || !pbOK {
+					status = http.StatusServiceUnavailable
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(status)
+				json.NewEncoder(w).Encode(resp)
+			}),
+		}
+
+		go func() {
+			<-ctx.Done()
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			srv.Shutdown(shutdownCtx) // graceful shutdown
+		}()
+
+		log.Printf("Listening on %s", *addr)
+		return srv.ListenAndServe()
+	})
+
+	// Wait for goroutines to exit
+	if err := g.Wait(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("Fatal error: %v", err)
+	}
 }
