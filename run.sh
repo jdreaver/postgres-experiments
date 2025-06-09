@@ -289,7 +289,7 @@ Name=$NETDEV_NAME
 
 [Network]
 Address=${HOST_IPS[host]}/$IP_CIDR_SLASH
-IPForward=yes
+IPv4Forwarding=yes
 EOF
 
     sudo systemctl daemon-reload # I don't think daemon-reload is necessary for network stuff
