@@ -15,13 +15,11 @@ pgdaemon features:
 - DynamoDB backend (just abstract common bits from etcd backend)
 - Implement manual failover (not automated) so pgdaemon knows the sequence of events it must do to perform failover
   - Consider having pgdaemon implement starting `postgresql.service` as well, and do different things depending on leader vs replica
-- Write heartbeats to etcd so others can read self-reported status during leader election
-- Implement leader election
 
-Tech to investigate:
-- Citus
-- Patroni for HA
-- Barman for backups?
+Physical vs logical replication
+- "Physical replication group" is standard HA setup (1 primary, 1+ replicas).
+- Anything that requires logical replication (shard splits, complex migrations, vacuum full, etc) requires logically replicating from the primary physical group to another node. This combination is a "logical replication group"
+  - Once we are ready to switch over to the logically-replicated node, we can spin up 1+ replicas right beforehand, making it HA.
 
 # Resources
 
