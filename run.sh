@@ -201,6 +201,9 @@ echo 'log_hostname = on' >> /var/lib/postgres/data/postgresql.conf
 echo 'synchronous_commit = off' >> /var/lib/postgres/data/postgresql.conf
 echo 'work_mem = 64MB' >> /var/lib/postgres/data/postgresql.conf
 
+# Support replication
+echo 'wal_level = logical' >> /var/lib/postgres/data/postgresql.conf
+
 # pgbouncer
 echo '"postgres" ""' > /etc/pgbouncer/userlist.txt
 chown -R pgbouncer:pgbouncer /etc/pgbouncer
