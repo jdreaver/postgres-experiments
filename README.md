@@ -5,7 +5,6 @@ Repo where I mess around with postgres.
 # TODO
 
 Minor cleanups:
-- Make interface for StateBackend, have `etcd` be an implementation, and move etcd code into `etcd.go`
 - Clean up `observed-state`
   - Only store data we need
   - Don't just copy names from `pg_stat_*` tables. Give names semantic meaning.

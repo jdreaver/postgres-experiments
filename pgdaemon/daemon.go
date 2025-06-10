@@ -11,15 +11,15 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func daemon(ctx context.Context, etcd *EtcdBackend, conf config) {
+func daemon(ctx context.Context, store StateStore, conf config) {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return leaderReconcilerLoop(ctx, etcd)
+		return leaderReconcilerLoop(ctx, store)
 	})
 
 	g.Go(func() error {
-		return nodeReconcilerLoop(ctx, etcd, conf)
+		return nodeReconcilerLoop(ctx, store, conf)
 	})
 
 	g.Go(func() error {
@@ -32,7 +32,7 @@ func daemon(ctx context.Context, etcd *EtcdBackend, conf config) {
 }
 
 // leaderReconcilerLoop runs the leader election and performs leader tasks.
-func leaderReconcilerLoop(ctx context.Context, etcd *EtcdBackend) error {
+func leaderReconcilerLoop(ctx context.Context, store StateStore) error {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -42,15 +42,15 @@ func leaderReconcilerLoop(ctx context.Context, etcd *EtcdBackend) error {
 			return fmt.Errorf("returning ctx.Done() error in leader loop: %w", ctx.Err())
 		case <-ticker.C:
 			eCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			err := etcd.RunElection(eCtx)
+			err := store.RunElection(eCtx)
 			cancel()
 			if err != nil {
 				log.Printf("Election error: %v", err)
 			}
 
-			if etcd.IsLeader() {
+			if store.IsLeader() {
 				log.Printf("I'm the leader")
-				if err := performLeaderTasks(ctx, etcd); err != nil {
+				if err := performLeaderTasks(ctx, store); err != nil {
 					log.Printf("Failed to perform leader tasks: %v", err)
 				}
 			}
@@ -61,7 +61,7 @@ func leaderReconcilerLoop(ctx context.Context, etcd *EtcdBackend) error {
 // nodeReconcilerLoop runs the node reconciler, which fetches the
 // desired and observed state of the current node and performs tasks
 // to reconcile that state.
-func nodeReconcilerLoop(ctx context.Context, etcd *EtcdBackend, conf config) error {
+func nodeReconcilerLoop(ctx context.Context, store StateStore, conf config) error {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -70,18 +70,18 @@ func nodeReconcilerLoop(ctx context.Context, etcd *EtcdBackend, conf config) err
 		case <-ctx.Done():
 			return fmt.Errorf("returning ctx.Done() error in node reconciler loop: %w", ctx.Err())
 		case <-ticker.C:
-			if err := storePostgresStateInEtcd(ctx, etcd, conf); err != nil {
+			if err := storePostgresStateInStore(ctx, store, conf); err != nil {
 				log.Printf("Failed to store Postgres state: %v", err)
 			}
 
-			if err := performNodeTasks(ctx, etcd, conf); err != nil {
+			if err := performNodeTasks(ctx, store, conf); err != nil {
 				log.Printf("Failed to perform node tasks: %v", err)
 			}
 		}
 	}
 }
 
-func storePostgresStateInEtcd(ctx context.Context, etcd *EtcdBackend, conf config) error {
+func storePostgresStateInStore(ctx context.Context, store StateStore, conf config) error {
 	state, err := fetchPostgresNodeState(conf.postgresHost, conf.postgresPort, conf.postgresUser, 500*time.Millisecond)
 	if err != nil {
 		log.Printf("Failed to fetch Postgres node state: %v", err)
@@ -90,17 +90,17 @@ func storePostgresStateInEtcd(ctx context.Context, etcd *EtcdBackend, conf confi
 	}
 
 	wCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
-	err = etcd.WriteCurrentNodeObservedState(wCtx, state)
+	err = store.WriteCurrentNodeObservedState(wCtx, state)
 	cancel()
 	if err != nil {
-		return fmt.Errorf("failed to write node state to etcd: %w", err)
+		return fmt.Errorf("failed to write node state to store: %w", err)
 	}
 
 	return nil
 }
 
-func performLeaderTasks(ctx context.Context, etcd *EtcdBackend) error {
-	clusterState, err := etcd.FetchClusterDesiredState(ctx)
+func performLeaderTasks(ctx context.Context, store StateStore) error {
+	clusterState, err := store.FetchClusterDesiredState(ctx)
 	if err != nil {
 		return fmt.Errorf("Failed to fetch cluster desired state: %w", err)
 	}
@@ -110,12 +110,12 @@ func performLeaderTasks(ctx context.Context, etcd *EtcdBackend) error {
 		PrimaryName: clusterState.PrimaryName,
 	}
 
-	if err := etcd.SetNodeDesiredState(ctx, clusterState.PrimaryName, &nodeDesiredState); err != nil {
+	if err := store.SetNodeDesiredState(ctx, clusterState.PrimaryName, &nodeDesiredState); err != nil {
 		return fmt.Errorf("Failed to set primary desired state: %w", err)
 	}
 
 	for _, replica := range clusterState.ReplicaNames {
-		if err := etcd.SetNodeDesiredState(ctx, replica, &nodeDesiredState); err != nil {
+		if err := store.SetNodeDesiredState(ctx, replica, &nodeDesiredState); err != nil {
 			return fmt.Errorf("Failed to set node desired state for replica %s: %w", replica, err)
 		}
 	}
@@ -123,8 +123,8 @@ func performLeaderTasks(ctx context.Context, etcd *EtcdBackend) error {
 	return nil
 }
 
-func performNodeTasks(ctx context.Context, etcd *EtcdBackend, conf config) error {
-	desiredState, err := etcd.FetchCurrentNodeDesiredState(ctx)
+func performNodeTasks(ctx context.Context, store StateStore, conf config) error {
+	desiredState, err := store.FetchCurrentNodeDesiredState(ctx)
 	if err != nil {
 		return fmt.Errorf("Failed to fetch node desired state: %w", err)
 	}
@@ -189,5 +189,4 @@ func runHealthCheckServer(ctx context.Context, conf config) error {
 
 	log.Printf("Listening on %s", srv.Addr)
 	return srv.ListenAndServe()
-
 }
