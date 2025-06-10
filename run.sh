@@ -16,6 +16,7 @@ HOST_IPS[pg0]=10.42.0.10; HOSTS+=(pg0)
 HOST_IPS[pg1]=10.42.0.11; HOSTS+=(pg1)
 HOST_IPS[pg2]=10.42.0.12; HOSTS+=(pg2)
 HOST_IPS[etcd0]=10.42.0.20; HOSTS+=(etcd0)
+HOST_IPS[haproxy0]=10.42.0.30; HOSTS+=(haproxy0)
 
 IP_CIDR_SLASH=24
 
@@ -54,6 +55,7 @@ create_pgbase_machine() {
         postgresql
         pgbouncer
         openssh
+        haproxy
 
         # Misc tools/utils
         bat
@@ -282,6 +284,64 @@ EOF
     sudo systemd-nspawn -D "$directory" bash /bootstrap.sh
 }
 
+setup_haproxy() {
+    if [[ $# -ne 1 ]]; then
+        echo "Usage: setup_haproxy <name>"
+        return 1
+    fi
+
+    local name="$1"
+    local directory="/var/lib/machines/$name"
+
+    local pgbouncer_port=6432
+    local pgdaemon_port=8080
+
+    sudo tee "$directory/etc/haproxy/haproxy.cfg" > /dev/null <<EOF
+global
+    maxconn 100
+
+defaults
+    mode tcp
+    timeout connect 4s
+    timeout client 30m
+    timeout server 30m
+    timeout check 5s
+
+# Stats UI
+listen stats
+    mode http
+    bind *:7000
+    stats enable
+    stats uri /
+
+# Route to the current primary
+listen primary
+    bind *:5432
+    option httpchk OPTIONS /primary
+    http-check expect status 200
+    default-server inter 3s fall 2 rise 1
+    server pg0 ${HOST_IPS[pg0]}:$pgbouncer_port check port $pgdaemon_port
+    server pg1 ${HOST_IPS[pg1]}:$pgbouncer_port check port $pgdaemon_port
+    server pg2 ${HOST_IPS[pg2]}:$pgbouncer_port check port $pgdaemon_port
+
+# Route to all healthy nodes (including primary)
+listen all
+    bind *:5433
+    option httpchk OPTIONS /health
+    http-check expect status 200
+    default-server inter 3s fall 2 rise 1
+    server pg0 ${HOST_IPS[pg0]}:$pgbouncer_port check port $pgdaemon_port
+    server pg1 ${HOST_IPS[pg1]}:$pgbouncer_port check port $pgdaemon_port
+    server pg2 ${HOST_IPS[pg2]}:$pgbouncer_port check port $pgdaemon_port
+EOF
+
+    sudo tee "$directory/bootstrap.sh" > /dev/null <<EOF
+systemctl enable haproxy.service
+EOF
+
+    sudo systemd-nspawn -D "$directory" bash /bootstrap.sh
+}
+
 initialize_cluster_state() {
     local etcd_ip="${HOST_IPS[etcd0]}"
 
@@ -379,6 +439,14 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     create_pgbase_machine
     build_pgdaemon
 
+    create_machine "etcd0"
+    setup_etcd "etcd0"
+    sudo machinectl start etcd0
+
+    create_machine "haproxy0"
+    setup_haproxy "haproxy0"
+    sudo machinectl start haproxy0
+
     create_machine "pg0"
     setup_postgres "pg0"
     sudo machinectl start pg0
@@ -390,10 +458,6 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     create_machine "pg2"
     setup_postgres "pg2"
     sudo machinectl start pg2
-
-    create_machine "etcd0"
-    setup_etcd "etcd0"
-    sudo machinectl start etcd0
 
     echo "Waiting for startup"
     sleep 40

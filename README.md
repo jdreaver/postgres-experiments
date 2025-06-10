@@ -4,8 +4,7 @@ Repo where I mess around with postgres.
 
 # TODO
 
-Frontend load balancer that uses pgdaemon health checks (overall health, as well as special endpoints for `/primary` and `/replica` for read/write and read-only connections)
-- Can use HAProxy locally
+Document what I've done so far. Maybe with some nice ASCII art.
 
 Run MongoDB locally too.
 - Get benchmark MongoDB data set and get it replicated into postgres so we can compare apples to apples
