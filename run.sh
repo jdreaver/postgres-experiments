@@ -92,7 +92,7 @@ create_pgbase_machine() {
 
     # Allow postgres user to start and stop postgres
     sudo tee "$directory/etc/sudoers.d/100-postgres" > /dev/null <<EOF
-postgres ALL=(ALL) NOPASSWD: /usr/bin/systemctl start postgresql.service, /usr/bin/systemctl stop postgresql.service
+postgres ALL=(ALL) NOPASSWD: /usr/bin/systemctl start postgresql.service, /usr/bin/systemctl stop postgresql.service, /usr/bin/systemctl start pgbouncer.service, /usr/bin/systemctl stop pgbouncer.service
 EOF
 
     sudo tee "$directory/bootstrap.sh" > /dev/null <<EOF

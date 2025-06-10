@@ -13,12 +13,6 @@ Minor cleanups:
   - Only store data we need
   - Don't just copy names from `pg_stat_*` tables. Give names semantic meaning.
 
-Have pgdaemon configure replica and start postgres instead of doing it with startup scripts. Seed desired state in etcd somehow and use that when booting.
-- Seed state should be cluster state (e.g. `primary: pg0, replicas: [pg1, pg2]`). First elected leader will turn that into desired node state.
-- Maybe ensure pgdaemon runs as postgres user, with privileges to start/stop postgres.service and pgbouncer.service
-- Have pgdaemon either do `initdb` or `pg_basebackup` (only if PGDATA is empty!) depending on primary vs replica.
-  - Can't create replicas unless primary is healthy. Could just retry until success.
-
 Frontend load balancer that uses pgdaemon health checks (overall health, as well as special endpoints for `/primary` and `/replica` for read/write and read-only connections)
 - Can use HAProxy locally
 

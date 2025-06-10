@@ -250,19 +250,26 @@ func appendToFile(path string, content string) error {
 }
 
 func ensurePostgresRunning() error {
+	return ensureSystemdUnitRunning("postgresql.service")
+}
+
+func ensurePgBouncerRunning() error {
+	return ensureSystemdUnitRunning("pgbouncer.service")
+}
+
+func ensureSystemdUnitRunning(name string) error {
 	// TODO: We should be able to surmise whether or not we need to
 	// do this based on the state we fetch about the node. If we
-	// can't connect, we should check if postgres is running, and
-	// cache that result.
-
-	cmd := exec.Command("systemctl", "is-active", "--quiet", "postgresql.service")
+	// can't connect, we should check if postgres/pgbouncer is
+	// running, and cache that result.
+	cmd := exec.Command("systemctl", "is-active", "--quiet", name)
 	if err := cmd.Run(); err != nil {
-		log.Println("Postgres might not not running, attempting to start it")
-		startCmd := exec.Command("sudo", "systemctl", "start", "postgresql.service")
+		log.Printf("%s might not not running, attempting to start it", name)
+		startCmd := exec.Command("sudo", "systemctl", "start", name)
 		startCmd.Stdout = os.Stdout
 		startCmd.Stderr = os.Stderr
 		if err := startCmd.Run(); err != nil {
-			return fmt.Errorf("failed to start Postgres: %w", err)
+			return fmt.Errorf("failed to start %s: %w", name, err)
 		}
 	}
 

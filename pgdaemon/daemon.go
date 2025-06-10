@@ -131,6 +131,10 @@ func performNodeTasks(ctx context.Context, etcd *EtcdBackend, conf config) error
 		return fmt.Errorf("Failed to ensure Postgres is running: %w", err)
 	}
 
+	if err := ensurePgBouncerRunning(); err != nil {
+		return fmt.Errorf("Failed to ensure PgBouncer is running: %w", err)
+	}
+
 	return nil
 }
 
