@@ -20,9 +20,18 @@ func main() {
 	defer cancel()
 
 	// TODO: Support DynamoDB backend as well
-	store, err := initializeEtcdStore(ctx, conf)
+	cli, err := clientv3.New(clientv3.Config{
+		Endpoints:   []string{fmt.Sprintf("%s:%s", conf.etcdHost, conf.etcdPort)},
+		DialTimeout: 2 * time.Second,
+	})
 	if err != nil {
-		log.Fatalf("Failed to initialize state store: %v", err)
+		log.Fatal(fmt.Errorf("failed to connect to etcd: %w", err))
+	}
+	defer cli.Close()
+
+	store, err := NewEtcdBackend(cli, conf.clusterName, conf.nodeName, conf.leaseDuration)
+	if err != nil {
+		log.Fatalf("Failed to create election: %v", err)
 	}
 
 	switch conf.command {
@@ -35,24 +44,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", conf.command)
 		os.Exit(1)
 	}
-}
-
-func initializeEtcdStore(ctx context.Context, conf config) (StateStore, error) {
-	cli, err := clientv3.New(clientv3.Config{
-		Endpoints:   []string{fmt.Sprintf("%s:%s", conf.etcdHost, conf.etcdPort)},
-		DialTimeout: 2 * time.Second,
-	})
-	if err != nil {
-		log.Fatal(fmt.Errorf("failed to connect to etcd: %w", err))
-	}
-	defer cli.Close()
-
-	etcd, err := NewEtcdBackend(cli, conf.clusterName, conf.nodeName, conf.leaseDuration)
-	if err != nil {
-		log.Fatalf("Failed to create election: %v", err)
-	}
-
-	return etcd, nil
 }
 
 func initCluster(ctx context.Context, store StateStore, conf config) {
