@@ -68,3 +68,9 @@ See all keys/values:
 ```
 $ watch -n 0.1 etcdctl get '""' --prefix
 ```
+
+Same, but with JSON parsing for the value
+
+```
+$ etcdctl get '' --prefix --write-out=json | jq '.kvs[] | { key: .key | @base64d, value: (.value | @base64d | try fromjson) // (.value | @base64d) } '
+```
