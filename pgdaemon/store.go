@@ -9,7 +9,7 @@ type StateStore interface {
 	InitializeCluster(ctx context.Context, state *ClusterDesiredState) error
 	FetchClusterDesiredState(ctx context.Context) (*ClusterDesiredState, error)
 
-	WriteCurrentNodeObservedState(ctx context.Context, state *PostgresNodeState) error
+	WriteCurrentNodeObservedState(ctx context.Context, state *NodeObservedState) error
 
 	SetNodeDesiredState(ctx context.Context, nodeName string, state *NodeDesiredState) error
 	FetchCurrentNodeDesiredState(ctx context.Context) (*NodeDesiredState, error)

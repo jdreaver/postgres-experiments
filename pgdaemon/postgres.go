@@ -24,36 +24,35 @@ func connectPostgres(ctx context.Context, host string, port int, user string) (*
 }
 
 type PostgresNodeState struct {
-	Error             *string                 `json:"error,omitempty"`
-	NodeTime          *string                 `json:"node_time,omitempty"`
-	IsPrimary         *bool                   `json:"is_primary,omitempty"`
-	PgStatReplicas    []PostgresPgStatReplica `json:"pg_stat_replicas,omitempty"`
-	PgStatWalReceiver *PgStatWalReceiver      `json:"pg_stat_wal_receiver,omitempty"`
+	NodeTime          *string
+	IsPrimary         *bool
+	PgStatReplicas    []PostgresPgStatReplica
+	PgStatWalReceiver *PgStatWalReceiver
 }
 
 type PostgresPgStatReplica struct {
-	ClientHostname string  `json:"client_hostname"`
-	ClientAddr     string  `json:"client_addr"`
-	ClientPort     string  `json:"client_port"`
-	State          string  `json:"state"`
-	SentLsn        string  `json:"sent_lsn"`
-	WriteLsn       string  `json:"write_lsn"`
-	FlushLsn       string  `json:"flush_lsn"`
-	ReplayLsn      string  `json:"replay_lsn"`
-	WriteLag       *string `json:"write_lag"`
-	FlushLag       *string `json:"flush_lag"`
-	ReplayLag      *string `json:"replay_lag"`
-	SyncState      string  `json:"sync_state"`
-	ReplyTime      string  `json:"reply_time"`
+	ClientHostname string
+	ClientAddr     string
+	ClientPort     string
+	State          string
+	SentLsn        string
+	WriteLsn       string
+	FlushLsn       string
+	ReplayLsn      string
+	WriteLag       *string
+	FlushLag       *string
+	ReplayLag      *string
+	SyncState      string
+	ReplyTime      string
 }
 
 type PgStatWalReceiver struct {
-	SenderHost      string  `json:"sender_host"`
-	SenderPort      string  `json:"sender_port"`
-	Status          string  `json:"status"`
-	ReceiveStartLsn *string `json:"receive_start_lsn"`
-	WrittenLsn      *string `json:"written_lsn"`
-	FlushedLsn      *string `json:"flushed_lsn"`
+	SenderHost      string
+	SenderPort      string
+	Status          string
+	ReceiveStartLsn *string
+	WrittenLsn      *string
+	FlushedLsn      *string
 }
 
 func fetchPostgresNodeState(host string, port int, user string, connTimeout time.Duration) (*PostgresNodeState, error) {

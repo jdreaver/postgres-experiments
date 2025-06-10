@@ -7,6 +7,29 @@ import (
 	"time"
 )
 
+type NodeObservedState struct {
+	Error             *string                `json:"error,omitempty"`
+	NodeTime          *string                `json:"node_time,omitempty"`
+	IsPrimary         *bool                  `json:"is_primary,omitempty"`
+	Replicas          []NodeReplicas         `json:"replicas,omitempty"`
+	PgStatWalReceiver *NodeReplicationStatus `json:"replication_status,omitempty"`
+}
+
+type NodeReplicas struct {
+	Hostname  string  `json:"hostname"`
+	State     string  `json:"state"`
+	WriteLsn  string  `json:"write_lsn"`
+	WriteLag  *string `json:"write_lag"`
+	SyncState string  `json:"sync_state"`
+	ReplyTime string  `json:"reply_time"`
+}
+
+type NodeReplicationStatus struct {
+	PrimaryHost string  `json:"primary_host"`
+	Status      string  `json:"status"`
+	WrittenLsn  *string `json:"written_lsn"`
+}
+
 // nodeReconcilerLoop runs the node reconciler, which fetches the
 // desired and observed state of the current node and performs tasks
 // to reconcile that state.
@@ -19,8 +42,8 @@ func nodeReconcilerLoop(ctx context.Context, store StateStore, conf config) erro
 		case <-ctx.Done():
 			return fmt.Errorf("returning ctx.Done() error in node reconciler loop: %w", ctx.Err())
 		case <-ticker.C:
-			if err := storePostgresStateInStore(ctx, store, conf); err != nil {
-				log.Printf("Failed to store Postgres state: %v", err)
+			if err := storeObservedState(ctx, store, conf); err != nil {
+				log.Printf("Failed to store observed state: %v", err)
 			}
 
 			if err := performNodeTasks(ctx, store, conf); err != nil {
@@ -30,16 +53,37 @@ func nodeReconcilerLoop(ctx context.Context, store StateStore, conf config) erro
 	}
 }
 
-func storePostgresStateInStore(ctx context.Context, store StateStore, conf config) error {
-	state, err := fetchPostgresNodeState(conf.postgresHost, conf.postgresPort, conf.postgresUser, 500*time.Millisecond)
+func storeObservedState(ctx context.Context, store StateStore, conf config) error {
+	var state NodeObservedState
+	pgState, err := fetchPostgresNodeState(conf.postgresHost, conf.postgresPort, conf.postgresUser, 500*time.Millisecond)
 	if err != nil {
 		log.Printf("Failed to fetch Postgres node state: %v", err)
 		errStr := err.Error()
-		state = &PostgresNodeState{Error: &errStr}
+		state.Error = &errStr
+	} else {
+		state.NodeTime = pgState.NodeTime
+		state.IsPrimary = pgState.IsPrimary
+		for _, replica := range pgState.PgStatReplicas {
+			state.Replicas = append(state.Replicas, NodeReplicas{
+				Hostname:  replica.ClientHostname,
+				State:     replica.State,
+				WriteLsn:  replica.WriteLsn,
+				WriteLag:  replica.WriteLag,
+				SyncState: replica.SyncState,
+				ReplyTime: replica.ReplyTime,
+			})
+		}
+		if pgState.PgStatWalReceiver != nil {
+			state.PgStatWalReceiver = &NodeReplicationStatus{
+				PrimaryHost: pgState.PgStatWalReceiver.SenderHost,
+				Status:      pgState.PgStatWalReceiver.Status,
+				WrittenLsn:  pgState.PgStatWalReceiver.WrittenLsn,
+			}
+		}
 	}
 
 	wCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
-	err = store.WriteCurrentNodeObservedState(wCtx, state)
+	err = store.WriteCurrentNodeObservedState(wCtx, &state)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("failed to write node state to store: %w", err)

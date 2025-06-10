@@ -5,11 +5,10 @@ Repo where I mess around with postgres.
 # TODO
 
 Minor cleanups:
-- Clean up `observed-state`
-  - Only store data we need
-  - Don't just copy names from `pg_stat_*` tables. Give names semantic meaning.
 - Make reconciler logic (both leader and node) pure. Do IO before and after, but not during. (Or have an interface that does IO)
   - As much as possible, reconcilers should be like "compilers" that take state and produce actions.
+
+Make distinction between "can't connect to postgres" and "my queries failed".
 
 Better structured logging. Use context more, like to store goroutine "name" (leader, node reconciler, health check server)
 
@@ -55,6 +54,8 @@ Physical vs logical replication
 - "Physical replication group" is standard HA setup (1 primary, 1+ replicas).
 - Anything that requires logical replication (shard splits, complex migrations, vacuum full, etc) requires logically replicating from the primary physical group to another node. This combination is a "logical replication group"
   - Once we are ready to switch over to the logically-replicated node, we can spin up 1+ replicas right beforehand, making it HA.
+
+Monitoring and some sort of dashboard to get a birds-eye-view of cluster instead of having to `journalctl -f` in many terminals.
 
 Settings to investigate:
 - `recovery_target_*` stuff https://www.postgresql.org/docs/current/runtime-config-wal.html#RUNTIME-CONFIG-WAL-RECOVERY-TARGET

@@ -236,7 +236,7 @@ func (e *EtcdBackend) IsLeader() bool {
 	return true
 }
 
-func (etcd *EtcdBackend) WriteCurrentNodeObservedState(ctx context.Context, state *PostgresNodeState) error {
+func (etcd *EtcdBackend) WriteCurrentNodeObservedState(ctx context.Context, state *NodeObservedState) error {
 	stateBytes, err := json.Marshal(state)
 	if err != nil {
 		return fmt.Errorf("failed to marshal node state: %w", err)
