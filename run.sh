@@ -459,10 +459,10 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     setup_postgres "pg2"
     sudo machinectl start pg2
 
-    echo "Waiting for startup"
-    sleep 40
-
     initialize_cluster_state
+
+    echo "Waiting for startup"
+    sleep 10
 
     download_imdb_datasets
     populate_imdb_data pg0
