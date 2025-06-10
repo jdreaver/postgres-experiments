@@ -209,28 +209,7 @@ RestartSec=1s
 WantedBy=multi-user.target
 EOF
 
-
     sudo tee "$directory/bootstrap.sh" > /dev/null <<EOF
-# Allow connections from all hosts, without password
-echo "host    all             all             0.0.0.0/0            trust" >> /var/lib/postgres/data/pg_hba.conf
-
-# Allow replication from all hosts
-echo "host    replication     all             0.0.0.0/0            trust" >> /var/lib/postgres/data/pg_hba.conf
-
-# Bind to all interfaces
-echo "listen_addresses = '*'" >> /var/lib/postgres/data/postgresql.conf
-
-# More logging
-echo 'log_connections = on' >> /var/lib/postgres/data/postgresql.conf
-echo 'log_hostname = on' >> /var/lib/postgres/data/postgresql.conf
-
-# More settings
-echo 'synchronous_commit = off' >> /var/lib/postgres/data/postgresql.conf
-echo 'work_mem = 64MB' >> /var/lib/postgres/data/postgresql.conf
-
-# Support replication
-echo 'wal_level = logical' >> /var/lib/postgres/data/postgresql.conf
-
 # pgbouncer
 echo '"postgres" ""' > /etc/pgbouncer/userlist.txt
 chown -R pgbouncer:pgbouncer /etc/pgbouncer

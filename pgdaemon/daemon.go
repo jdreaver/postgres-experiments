@@ -121,7 +121,7 @@ func performNodeTasks(ctx context.Context, etcd *EtcdBackend, conf config) error
 			return fmt.Errorf("Failed to configure as primary: %w", err)
 		}
 	} else {
-		err = configureAsReplica(ctx, desiredState.PrimaryName, conf.postgresPort, conf.postgresUser)
+		err = configureAsReplica(desiredState.PrimaryName, conf.postgresPort, conf.postgresUser)
 		if err != nil {
 			return fmt.Errorf("Failed to configure as replica: %w", err)
 		}

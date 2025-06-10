@@ -48,12 +48,12 @@ type PostgresPgStatReplica struct {
 }
 
 type PgStatWalReceiver struct {
-	SenderHost      string `json:"sender_host"`
-	SenderPort      string `json:"sender_port"`
-	Status          string `json:"status"`
-	ReceiveStartLsn string `json:"receive_start_lsn"`
-	WrittenLsn      string `json:"written_lsn"`
-	FlushedLsn      string `json:"flushed_lsn"`
+	SenderHost      string  `json:"sender_host"`
+	SenderPort      string  `json:"sender_port"`
+	Status          string  `json:"status"`
+	ReceiveStartLsn *string `json:"receive_start_lsn"`
+	WrittenLsn      *string `json:"written_lsn"`
+	FlushedLsn      *string `json:"flushed_lsn"`
 }
 
 func fetchPostgresNodeState(host string, port int, user string, connTimeout time.Duration) (*PostgresNodeState, error) {
@@ -143,9 +143,10 @@ func checkDB(host string, port int, user string, connTimeout time.Duration) (boo
 }
 
 const pgDataDir = "/var/lib/postgres/data"
+const pgVersionFile = pgDataDir + "/PG_VERSION"
 
-func configureAsReplica(ctx context.Context, primaryHost string, primaryPort int, user string) error {
-	_, err := os.Stat(pgDataDir)
+func configureAsReplica(primaryHost string, primaryPort int, user string) error {
+	_, err := os.Stat(pgVersionFile)
 	if errors.Is(err, os.ErrNotExist) {
 		log.Printf("Initializing replica for primary %s database in %s", primaryHost, pgDataDir)
 
@@ -158,6 +159,10 @@ func configureAsReplica(ctx context.Context, primaryHost string, primaryPort int
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to initialize replica database: %w", err)
 		}
+
+		if err := commonPostgresConfig(); err != nil {
+			return fmt.Errorf("failed to configure replica database: %w", err)
+		}
 	}
 
 	// TODO: Check if pg_is_in_recovery() is false. If so, we need
@@ -167,7 +172,7 @@ func configureAsReplica(ctx context.Context, primaryHost string, primaryPort int
 }
 
 func configureAsPrimary() error {
-	_, err := os.Stat(pgDataDir)
+	_, err := os.Stat(pgVersionFile)
 	if errors.Is(err, os.ErrNotExist) {
 		log.Printf("Initializing primary database in %s", pgDataDir)
 
@@ -180,10 +185,66 @@ func configureAsPrimary() error {
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("failed to initialize primary database: %w", err)
 		}
+
+		if err := commonPostgresConfig(); err != nil {
+			return fmt.Errorf("failed to configure primary database: %w", err)
+		}
 	}
 
 	// TODO: Check if pg_is_in_recovery() is true, and do a
 	// pg_promote() (probably requires careful coordination)
+
+	return nil
+}
+
+// TODO: Specify this stuff in a config file. Or, move database
+// initialization entirely out of pgdaemon somehow and assume PGDATA
+// exists?
+func commonPostgresConfig() error {
+	err := appendToFile(pgDataDir+"/postgresql.conf", `
+# Bind to all interfaces
+listen_addresses = '*'
+
+# More logging
+log_connections = on
+log_hostname = on
+
+# More settings
+synchronous_commit = off
+work_mem = 64MB
+
+# Support replication
+wal_level = logical
+`)
+
+	if err != nil {
+		return fmt.Errorf("Failed to append to postgresql.conf: %w", err)
+	}
+
+	err = appendToFile(pgDataDir+"/pg_hba.conf", `
+# Allow connections from all hosts, without password
+host    all             all             0.0.0.0/0            trust
+
+# Allow replication from all hosts
+host    replication     all             0.0.0.0/0            trust
+`)
+	if err != nil {
+		return fmt.Errorf("Failed to append to pg_hba.conf: %w", err)
+	}
+
+	return nil
+}
+
+func appendToFile(path string, content string) error {
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open file %s: %w", path, err)
+	}
+	defer file.Close()
+
+	if _, err := file.WriteString(content); err != nil {
+		return fmt.Errorf("failed to write to file %s: %w", path, err)
+	}
 
 	return nil
 }
