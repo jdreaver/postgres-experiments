@@ -37,7 +37,7 @@ func parseFlags() config {
 	pbHost := flag.String("pgbouncer-host", "127.0.0.1", "PgBouncer host")
 	pbPort := flag.Int("pgbouncer-port", 6432, "PgBouncer port")
 	pgUser := flag.String("pguser", "postgres", "PostgreSQL user")
-	addr := flag.String("listen", ":8080", "Address to listen on")
+	listenAddress := flag.String("listen", "0.0.0.0:8080", "Address to listen on")
 	primaryName := flag.String("primary-name", "", "Name of the primary node (for initialization)")
 	replicaNames := flag.String("replica-names", "", "CSV of replica names (for initialization)")
 
@@ -80,7 +80,7 @@ func parseFlags() config {
 		postgresUser:  *pgUser,
 		pgBouncerHost: *pbHost,
 		pgBouncerPort: *pbPort,
-		listenAddress: *addr,
+		listenAddress: *listenAddress,
 		primaryName:   *primaryName,
 		replicaNames:  strings.Split(*replicaNames, ","),
 	}

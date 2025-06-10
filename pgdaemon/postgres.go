@@ -112,14 +112,7 @@ func fetchPostgresNodeState(host string, port int, user string, connTimeout time
 	return &state, nil
 }
 
-type HealthResponse struct {
-	PostgresOK   bool   `json:"postgres_ok"`
-	PostgresErr  string `json:"postgres_error,omitempty"`
-	PgBouncerOK  bool   `json:"pgbouncer_ok"`
-	PgBouncerErr string `json:"pgbouncer_error,omitempty"`
-}
-
-func checkDB(host string, port int, user string, connTimeout time.Duration) (bool, error) {
+func checkIsPrimary(host string, port int, user string, connTimeout time.Duration) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), connTimeout)
 	defer cancel()
 
@@ -129,16 +122,12 @@ func checkDB(host string, port int, user string, connTimeout time.Duration) (boo
 	}
 	defer conn.Close(ctx)
 
-	var n int
-	err = conn.QueryRow(ctx, "SELECT 1").Scan(&n)
-	if err != nil {
-		return false, fmt.Errorf("query error: %w", err)
-	}
-	if n != 1 {
-		return false, fmt.Errorf("unexpected result from SELECT 1")
+	var isPrimary bool
+	if err := conn.QueryRow(ctx, "SELECT NOT pg_is_in_recovery()").Scan(&isPrimary); err != nil {
+		return false, fmt.Errorf("check pg_is_in_recovery: %w", err)
 	}
 
-	return true, nil
+	return isPrimary, nil
 }
 
 const pgDataDir = "/var/lib/postgres/data"

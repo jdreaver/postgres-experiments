@@ -2,36 +2,20 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 	"time"
 )
 
 func runHealthCheckServer(ctx context.Context, conf config) error {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/health", healthCheck(conf, false))
+	mux.HandleFunc("/primary", healthCheck(conf, true))
+
 	srv := &http.Server{
-		Addr: conf.listenAddress,
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			timeout := 500 * time.Millisecond
-			pgOK, pgErr := checkDB(conf.postgresHost, conf.postgresPort, conf.postgresUser, timeout)
-			pbOK, pbErr := checkDB(conf.pgBouncerHost, conf.pgBouncerPort, conf.postgresUser, timeout)
-
-			resp := HealthResponse{
-				PostgresOK:   pgOK,
-				PostgresErr:  pgErr.Error(),
-				PgBouncerOK:  pbOK,
-				PgBouncerErr: pbErr.Error(),
-			}
-
-			status := http.StatusOK
-			if !pgOK || !pbOK {
-				status = http.StatusServiceUnavailable
-			}
-
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(status)
-			json.NewEncoder(w).Encode(resp)
-		}),
+		Addr:    conf.listenAddress,
+		Handler: mux,
 	}
 
 	go func() {
@@ -43,4 +27,24 @@ func runHealthCheckServer(ctx context.Context, conf config) error {
 
 	log.Printf("Listening on %s", srv.Addr)
 	return srv.ListenAndServe()
+}
+
+func healthCheck(conf config, checkPrimary bool) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		timeout := 500 * time.Millisecond
+		// N.B. Check health through pgbouncer to ensure that is working
+		isPrimary, err := checkIsPrimary(conf.pgBouncerHost, conf.pgBouncerPort, conf.postgresUser, timeout)
+
+		status := http.StatusOK
+		if err != nil {
+			log.Printf("/health failed: %v", err)
+			status = http.StatusServiceUnavailable
+		}
+
+		if checkPrimary && !isPrimary {
+			status = http.StatusServiceUnavailable
+		}
+
+		w.WriteHeader(status)
+	}
 }
