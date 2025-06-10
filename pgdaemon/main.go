@@ -5,10 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"golang.org/x/sync/errgroup"
 )
 
 func main() {
@@ -62,5 +64,25 @@ func initCluster(ctx context.Context, store StateStore, conf config) {
 	err := store.InitializeCluster(ctx, &state)
 	if err != nil {
 		log.Fatalf("Failed to initialize cluster: %v", err)
+	}
+}
+
+func daemon(ctx context.Context, store StateStore, conf config) {
+	g, ctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		return leaderReconcilerLoop(ctx, store)
+	})
+
+	g.Go(func() error {
+		return nodeReconcilerLoop(ctx, store, conf)
+	})
+
+	g.Go(func() error {
+		return runHealthCheckServer(ctx, conf)
+	})
+
+	if err := g.Wait(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("Fatal error: %v", err)
 	}
 }
