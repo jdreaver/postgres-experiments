@@ -9,6 +9,8 @@ Have pgdaemon configure replica and start postgres instead of doing it with star
 Frontend load balancer that uses pgdaemon health checks (overall health, as well as special endpoints for `/primary` and `/replica` for read/write and read-only connections)
 - Can use HAProxy locally
 
+Use https://github.com/spf13/viper to separate daemon and init command line flags and to support more configuration possibilities
+
 pgdaemon architecture ideas:
 - Dumb control loops. Each pgdaemon is a "controller" for its node, and the pgdaemon leader is the "controller" as well as "operator" for the cluster.
   - The leader can put desired node states into etcd, and each pgdaemon reconciles the desired state with the actual node state.

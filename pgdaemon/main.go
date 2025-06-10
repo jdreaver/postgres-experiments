@@ -15,33 +15,13 @@ import (
 )
 
 func main() {
-	etcdHost := flag.String("etcd-host", "127.0.0.1", "etcd host")
-	etcdPort := flag.String("etcd-port", "2379", "etcd port")
-	leaseDuration := flag.Duration("lease-duration", 5*time.Second, "Lease duration for leader election")
-	nodeName := flag.String("node-name", "", "Name of this node in the election (defaults to hostname)")
-	clusterName := flag.String("cluster-name", "my-cluster", "Name of the postgres cluster")
-	pgHost := flag.String("postgres-host", "127.0.0.1", "PostgreSQL host")
-	pgPort := flag.Int("postgres-port", 5432, "PostgreSQL port")
-	pbHost := flag.String("pgbouncer-host", "127.0.0.1", "PgBouncer host")
-	pbPort := flag.Int("pgbouncer-port", 6432, "PgBouncer port")
-	pgUser := flag.String("pguser", "postgres", "PostgreSQL user")
-	addr := flag.String("listen", ":8080", "Address to listen on")
-
-	flag.Parse()
-
-	if *nodeName == "" {
-		hostname, err := os.Hostname()
-		if err != nil {
-			log.Fatal(fmt.Errorf("failed to get hostname: %w", err))
-		}
-		*nodeName = hostname
-	}
+	conf := parseFlags()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	cli, err := clientv3.New(clientv3.Config{
-		Endpoints:   []string{fmt.Sprintf("%s:%s", *etcdHost, *etcdPort)},
+		Endpoints:   []string{fmt.Sprintf("%s:%s", conf.etcdHost, conf.etcdPort)},
 		DialTimeout: 2 * time.Second,
 	})
 	if err != nil {
@@ -49,11 +29,22 @@ func main() {
 	}
 	defer cli.Close()
 
-	etcd, err := NewEtcdBackend(cli, *clusterName, *nodeName, *leaseDuration)
+	etcd, err := NewEtcdBackend(cli, conf.clusterName, conf.nodeName, conf.leaseDuration)
 	if err != nil {
 		log.Fatalf("Failed to create election: %v", err)
 	}
 
+	switch conf.command {
+	case "daemon":
+		daemon(ctx, etcd, conf)
+	default:
+		flag.Usage()
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", conf.command)
+		os.Exit(1)
+	}
+}
+
+func daemon(ctx context.Context, etcd *EtcdBackend, conf config) {
 	// Use errgroup for goroutine lifecycle management
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -76,7 +67,7 @@ func main() {
 				}
 
 				// Fetch state
-				state, err := fetchPostgresNodeState(*pgHost, *pgPort, *pgUser, 500*time.Millisecond)
+				state, err := fetchPostgresNodeState(conf.postgresHost, conf.postgresPort, conf.postgresUser, 500*time.Millisecond)
 				if err != nil {
 					log.Printf("Failed to fetch Postgres node state: %v", err)
 					errStr := err.Error()
@@ -97,11 +88,11 @@ func main() {
 	// HTTP server for health checks
 	g.Go(func() error {
 		srv := &http.Server{
-			Addr: *addr,
+			Addr: conf.listenAddress,
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				timeout := 500 * time.Millisecond
-				pgOK, pgErr := checkDB(*pgHost, *pgPort, *pgUser, timeout)
-				pbOK, pbErr := checkDB(*pbHost, *pbPort, *pgUser, timeout)
+				pgOK, pgErr := checkDB(conf.postgresHost, conf.postgresPort, conf.postgresUser, timeout)
+				pbOK, pbErr := checkDB(conf.pgBouncerHost, conf.pgBouncerPort, conf.postgresUser, timeout)
 
 				resp := HealthResponse{
 					PostgresOK:   pgOK,
@@ -128,7 +119,7 @@ func main() {
 			srv.Shutdown(shutdownCtx) // graceful shutdown
 		}()
 
-		log.Printf("Listening on %s", *addr)
+		log.Printf("Listening on %s", srv.Addr)
 		return srv.ListenAndServe()
 	})
 
