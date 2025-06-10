@@ -212,6 +212,7 @@ log_hostname = on
 # More settings
 synchronous_commit = off
 work_mem = 64MB
+maintenance_work_mem = 2GB
 
 # Support replication
 wal_level = logical
