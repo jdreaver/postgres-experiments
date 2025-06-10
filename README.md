@@ -6,12 +6,18 @@ Repo where I mess around with postgres.
 
 Minor cleanups:
 - Make interface for StateBackend, have `etcd` be an implementation, and move etcd code into `etcd.go`
-- Make file for daemon-specific logic outside of main
-  - Daemon loop is way too nested, ugh. Functions will be nicer because we can return errors and early exit.
-- Clean up `node_state`
-  - Give it better name, like `observed-state`
+- Clean up `observed-state`
   - Only store data we need
   - Don't just copy names from `pg_stat_*` tables. Give names semantic meaning.
+
+Store replication lag (accounting for 0 lag) in replica observed state (would be nice to be able to do this from primary too. Is there a way? Do we need `hot_standby_feedback`?):
+
+    ```
+    CASE
+        WHEN pg_last_wal_receive_lsn() = pg_last_wal_replay_lsn() THEN 0
+        ELSE EXTRACT (EPOCH FROM now() - pg_last_xact_replay_timestamp())
+    END AS log_delay;
+    ```
 
 Frontend load balancer that uses pgdaemon health checks (overall health, as well as special endpoints for `/primary` and `/replica` for read/write and read-only connections)
 - Can use HAProxy locally
@@ -32,6 +38,7 @@ pgdaemon architecture ideas:
 - Remember to use local clocks for measuring elapsed time.
 - Have leader clear out stale node state (e.g. old nodes that have dropped)
 - Record important events, either with a well known log line identifier or in etcd/DDB (like the k8s Events API). Things like health check failures, failover starts/ends, manual failover, etc.
+- Rethink initialization: it would be nice to not have pgdaemon do so much of this (setting params and stuff). Maybe specify `-primary-init-script` and `-replica-init-script` args and put our logic in there. pgdaemon can just set relevant env vars for the replica script. Or we can just specify "extra config".
 
 pgdaemon features:
 - Nodes should ping one another so they can determine if etcd/DDB is down. If all nodes can be contacted, then continue as usual (sans leader elections). Especially important for primary. If primary can still contact a majority of replicas, then don't step down. If it can't, then step down.
