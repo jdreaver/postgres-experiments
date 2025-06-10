@@ -396,7 +396,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     sudo machinectl start etcd0
 
     echo "Waiting for startup"
-    sleep 5
+    sleep 30
 
     initialize_cluster_state
 
