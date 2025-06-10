@@ -2,13 +2,17 @@
 
 Repo where I mess around with postgres.
 
-## TODO
+# TODO
 
 Minor cleanups:
 - Make interface for StateBackend, have `etcd` be an implementation, and move etcd code into `etcd.go`
 - Clean up `observed-state`
   - Only store data we need
   - Don't just copy names from `pg_stat_*` tables. Give names semantic meaning.
+- Make reconciler logic (both leader and node) pure. Do IO before and after, but not during. (Or have an interface that does IO)
+  - As much as possible, reconcilers should be like "compilers" that take state and produce actions.
+
+Better structured logging. Use context more, like to store goroutine "name" (leader, node reconciler, health check server)
 
 Store replication lag (accounting for 0 lag) in replica observed state (would be nice to be able to do this from primary too. Is there a way? Do we need `hot_standby_feedback`?):
 
@@ -39,6 +43,7 @@ pgdaemon architecture ideas:
 - Have leader clear out stale node state (e.g. old nodes that have dropped)
 - Record important events, either with a well known log line identifier or in etcd/DDB (like the k8s Events API). Things like health check failures, failover starts/ends, manual failover, etc.
 - Rethink initialization: it would be nice to not have pgdaemon do so much of this (setting params and stuff). Maybe specify `-primary-init-script` and `-replica-init-script` args and put our logic in there. pgdaemon can just set relevant env vars for the replica script. Or we can just specify "extra config".
+  - Also consider having a `postgresql-pgdaemon.conf` that gets `include`ed (or do e.g. `include_dir 'postgresql.conf.d/'`)
 
 pgdaemon features:
 - Nodes should ping one another so they can determine if etcd/DDB is down. If all nodes can be contacted, then continue as usual (sans leader elections). Especially important for primary. If primary can still contact a majority of replicas, then don't step down. If it can't, then step down.
@@ -55,6 +60,17 @@ Physical vs logical replication
 Settings to investigate:
 - `recovery_target_*` stuff https://www.postgresql.org/docs/current/runtime-config-wal.html#RUNTIME-CONFIG-WAL-RECOVERY-TARGET
 - `hot_standby_feedback`, specifically for chained logical replication https://www.postgresql.org/docs/current/runtime-config-replication.html#RUNTIME-CONFIG-REPLICATION-STANDBY
+
+
+## Comparison with Mongo
+
+Compare replication and replica commit settings apples to apples with Mongo `{w: 1, j:0}`
+
+## EC2
+
+Get this running in AWS
+
+EBS supports atomic writes of up to 16 kB, so we can probably turn off `full_page_writes`. Many instance store SSD volumes also support this.
 
 # Resources
 

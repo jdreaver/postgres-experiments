@@ -12,33 +12,34 @@ import (
 )
 
 func daemon(ctx context.Context, etcd *EtcdBackend, conf config) {
-	// Use errgroup for goroutine lifecycle management
 	g, ctx := errgroup.WithContext(ctx)
 
-	// Election loop
 	g.Go(func() error {
-		return daemonLoop(ctx, etcd, conf)
+		return leaderReconcilerLoop(ctx, etcd)
 	})
 
-	// HTTP server for health checks
+	g.Go(func() error {
+		return nodeReconcilerLoop(ctx, etcd, conf)
+	})
+
 	g.Go(func() error {
 		return runHealthCheckServer(ctx, conf)
 	})
 
-	// Wait for goroutines to exit
 	if err := g.Wait(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Fatal error: %v", err)
 	}
 }
 
-func daemonLoop(ctx context.Context, etcd *EtcdBackend, conf config) error {
+// leaderReconcilerLoop runs the leader election and performs leader tasks.
+func leaderReconcilerLoop(ctx context.Context, etcd *EtcdBackend) error {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("returning ctx.Done() error in leader loop: %w", ctx.Err())
 		case <-ticker.C:
 			eCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			err := etcd.RunElection(eCtx)
@@ -47,15 +48,30 @@ func daemonLoop(ctx context.Context, etcd *EtcdBackend, conf config) error {
 				log.Printf("Election error: %v", err)
 			}
 
-			if err := storePostgresStateInEtcd(ctx, etcd, conf); err != nil {
-				log.Printf("Failed to store Postgres state: %v", err)
-			}
-
 			if etcd.IsLeader() {
 				log.Printf("I'm the leader")
 				if err := performLeaderTasks(ctx, etcd); err != nil {
 					log.Printf("Failed to perform leader tasks: %v", err)
 				}
+			}
+		}
+	}
+}
+
+// nodeReconcilerLoop runs the node reconciler, which fetches the
+// desired and observed state of the current node and performs tasks
+// to reconcile that state.
+func nodeReconcilerLoop(ctx context.Context, etcd *EtcdBackend, conf config) error {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("returning ctx.Done() error in node reconciler loop: %w", ctx.Err())
+		case <-ticker.C:
+			if err := storePostgresStateInEtcd(ctx, etcd, conf); err != nil {
+				log.Printf("Failed to store Postgres state: %v", err)
 			}
 
 			if err := performNodeTasks(ctx, etcd, conf); err != nil {

@@ -196,7 +196,7 @@ EOF
 [Unit]
 Description=Daemon for monitoring postgres
 
-After=network.target pgbouncer.service postgres.service
+After=network.target pgbouncer.service postgresql.service
 
 [Service]
 ExecStart=/usr/bin/pgdaemon -etcd-host etcd0 -cluster-name $PG_CLUSTER_NAME
