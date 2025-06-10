@@ -4,6 +4,15 @@ Repo where I mess around with postgres.
 
 ## TODO
 
+Minor cleanups:
+- Make interface for StateBackend, have `etcd` be an implementation, and move etcd code into `etcd.go`
+- Make file for daemon-specific logic outside of main
+  - Daemon loop is way too nested, ugh. Functions will be nicer because we can return errors and early exit.
+- Clean up `node_state`
+  - Give it better name, like `observed-state`
+  - Only store data we need
+  - Don't just copy names from `pg_stat_*` tables. Give names semantic meaning.
+
 Have pgdaemon configure replica and start postgres instead of doing it with startup scripts. Seed desired state in etcd somehow and use that when booting.
 - Seed state should be cluster state (e.g. `primary: pg0, replicas: [pg1, pg2]`). First elected leader will turn that into desired node state.
 - Maybe ensure pgdaemon runs as postgres user, with privileges to start/stop postgres.service and pgbouncer.service
@@ -76,5 +85,5 @@ $ watch -n 0.1 etcdctl get '""' --prefix
 Same, but with JSON parsing for the value
 
 ```
-$ etcdctl get '' --prefix --write-out=json | jq '.kvs[] | { key: .key | @base64d, value: (.value | @base64d | try fromjson) // (.value | @base64d) } '
+$ etcdctl get '' --prefix --write-out=json | jq '.kvs[] | { key: .key | @base64d, value: (.value | @base64d | try fromjson) // (.value | @base64d) }'
 ```

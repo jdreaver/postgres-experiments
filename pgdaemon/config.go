@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -21,6 +22,8 @@ type config struct {
 	pgBouncerHost string
 	pgBouncerPort int
 	listenAddress string
+	primaryName   string
+	replicaNames  []string
 }
 
 func parseFlags() config {
@@ -28,13 +31,15 @@ func parseFlags() config {
 	etcdPort := flag.String("etcd-port", "2379", "etcd port")
 	leaseDuration := flag.Duration("lease-duration", 5*time.Second, "Lease duration for leader election")
 	nodeName := flag.String("node-name", "", "Name of this node in the election (defaults to hostname)")
-	clusterName := flag.String("cluster-name", "my-cluster", "Name of the postgres cluster")
+	clusterName := flag.String("cluster-name", "", "Name of the postgres cluster")
 	pgHost := flag.String("postgres-host", "127.0.0.1", "PostgreSQL host")
 	pgPort := flag.Int("postgres-port", 5432, "PostgreSQL port")
 	pbHost := flag.String("pgbouncer-host", "127.0.0.1", "PgBouncer host")
 	pbPort := flag.Int("pgbouncer-port", 6432, "PgBouncer port")
 	pgUser := flag.String("pguser", "postgres", "PostgreSQL user")
 	addr := flag.String("listen", ":8080", "Address to listen on")
+	primaryName := flag.String("primary-name", "", "Name of the primary node (for initialization)")
+	replicaNames := flag.String("replica-names", "", "CSV of replica names (for initialization)")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: pgdaemon [command] [options]\n")
@@ -59,6 +64,10 @@ func parseFlags() config {
 		*nodeName = hostname
 	}
 
+	if *clusterName == "" {
+		log.Fatal("Cluster name must be specified with -cluster-name")
+	}
+
 	return config{
 		command:       command,
 		etcdHost:      *etcdHost,
@@ -72,5 +81,7 @@ func parseFlags() config {
 		pgBouncerHost: *pbHost,
 		pgBouncerPort: *pbPort,
 		listenAddress: *addr,
+		primaryName:   *primaryName,
+		replicaNames:  strings.Split(*replicaNames, ","),
 	}
 }

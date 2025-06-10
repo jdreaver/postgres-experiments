@@ -77,6 +77,22 @@ func (etcd *EtcdBackend) electionPrefix() string {
 	return etcd.clusterPrefix() + "/election"
 }
 
+func (etcd *EtcdBackend) clusterDesiredStatePrefix() string {
+	return etcd.clusterPrefix() + "/desired-state"
+}
+
+func (etcd *EtcdBackend) nodePrefix(nodeName string) string {
+	return etcd.clusterPrefix() + "/nodes/" + nodeName
+}
+
+func (etcd *EtcdBackend) nodeDesiredStatePrefix(nodeName string) string {
+	return etcd.nodePrefix(nodeName) + "/desired-state"
+}
+
+func (etcd *EtcdBackend) nodeObservedStatePrefix(nodeName string) string {
+	return etcd.nodePrefix(nodeName) + "/observed-state"
+}
+
 func (etcd *EtcdBackend) RunElection(ctx context.Context) error {
 	err := etcd.updateObservedLease(ctx)
 	if err != nil {
@@ -220,15 +236,94 @@ func (e *EtcdBackend) IsLeader() bool {
 	return true
 }
 
-func (etcd *EtcdBackend) WriteNodeState(ctx context.Context, state *PostgresNodeState) error {
+func (etcd *EtcdBackend) WriteCurrentNodeObservedState(ctx context.Context, state *PostgresNodeState) error {
 	stateBytes, err := json.Marshal(state)
 	if err != nil {
 		return fmt.Errorf("failed to marshal node state: %w", err)
 	}
-	_, err = etcd.client.Put(ctx, etcd.clusterPrefix()+"/node_state/"+etcd.nodeName, string(stateBytes))
-	if err != nil {
+
+	if _, err := etcd.client.Put(ctx, etcd.nodeObservedStatePrefix(etcd.nodeName), string(stateBytes)); err != nil {
 		return fmt.Errorf("failed to write node state to etcd: %w", err)
 	}
 
 	return nil
+}
+
+type ClusterDesiredState struct {
+	PrimaryName  string   `json:"primary_name"`
+	ReplicaNames []string `json:"replica_names"`
+}
+
+func (etcd *EtcdBackend) InitializeCluster(ctx context.Context, state *ClusterDesiredState) error {
+	if state.PrimaryName == "" {
+		return fmt.Errorf("primary name cannot be empty")
+	}
+
+	stateBytes, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("failed to marshal cluster desired state: %w", err)
+	}
+
+	_, err = etcd.client.Put(ctx, etcd.clusterDesiredStatePrefix(), string(stateBytes))
+	if err != nil {
+		return fmt.Errorf("failed to write cluster desired state to etcd: %w", err)
+	}
+
+	log.Printf("Cluster desired state initialized: %s", string(stateBytes))
+
+	return nil
+}
+
+func (etcd *EtcdBackend) FetchClusterDesiredState(ctx context.Context) (*ClusterDesiredState, error) {
+	resp, err := etcd.client.Get(ctx, etcd.clusterDesiredStatePrefix())
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch cluster desired state: %w", err)
+	}
+
+	if len(resp.Kvs) == 0 {
+		return nil, fmt.Errorf("cluster desired state not found")
+	}
+
+	var state ClusterDesiredState
+	if err := json.Unmarshal(resp.Kvs[0].Value, &state); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal cluster desired state: %w", err)
+	}
+
+	return &state, nil
+}
+
+type NodeDesiredState struct {
+	PrimaryName string `json:"primary_name"`
+}
+
+func (etcd *EtcdBackend) SetNodeDesiredState(ctx context.Context, nodeName string, state *NodeDesiredState) error {
+	stateBytes, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("failed to marshal node desired state: %w", err)
+	}
+
+	if _, err := etcd.client.Put(ctx, etcd.nodeDesiredStatePrefix(nodeName), string(stateBytes)); err != nil {
+		return fmt.Errorf("failed to write node desired state to etcd: %w", err)
+	}
+
+	return nil
+}
+
+func (etcd *EtcdBackend) FetchCurrentNodeDesiredState(ctx context.Context) (*NodeDesiredState, error) {
+	prefix := etcd.nodeDesiredStatePrefix(etcd.nodeName)
+	resp, err := etcd.client.Get(ctx, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch node desired state at %s: %w", prefix, err)
+	}
+
+	if len(resp.Kvs) == 0 {
+		return nil, fmt.Errorf("node desired state not found, no values under %s", prefix)
+	}
+
+	var state NodeDesiredState
+	if err := json.Unmarshal(resp.Kvs[0].Value, &state); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal node desired state: %w", err)
+	}
+
+	return &state, nil
 }

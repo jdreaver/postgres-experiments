@@ -19,6 +19,30 @@ HOST_IPS[etcd0]=10.42.0.20; HOSTS+=(etcd0)
 
 IP_CIDR_SLASH=24
 
+PG_CLUSTER_NAME=my-cluster
+
+setup_lab_network() {
+    sudo mkdir -p /run/systemd/network
+
+    sudo tee /run/systemd/network/$NETDEV_NAME.netdev > /dev/null <<EOF
+[NetDev]
+Name=$NETDEV_NAME
+Kind=bridge
+EOF
+
+    sudo tee /run/systemd/network/$NETDEV_NAME.network > /dev/null <<EOF
+[Match]
+Name=$NETDEV_NAME
+
+[Network]
+Address=${HOST_IPS[host]}/$IP_CIDR_SLASH
+IPv4Forwarding=yes
+EOF
+
+    sudo systemctl daemon-reload # I don't think daemon-reload is necessary for network stuff
+    sudo systemctl restart systemd-networkd
+}
+
 create_pgbase_machine() {
     pacstrap_args=(
         -c # Use package cache on host
@@ -65,6 +89,11 @@ create_pgbase_machine() {
     for host in "${HOSTS[@]}"; do
         echo "${HOST_IPS[$host]} $host" | sudo tee -a "$directory/etc/hosts"
     done
+
+    # Allow postgres user to start and stop postgres
+    sudo tee "$directory/etc/sudoers.d/100-postgres" > /dev/null <<EOF
+postgres ALL=(ALL) NOPASSWD: /usr/bin/systemctl start postgresql.service, /usr/bin/systemctl stop postgresql.service
+EOF
 
     sudo tee "$directory/bootstrap.sh" > /dev/null <<EOF
 # Don't require a password for root in the container
@@ -170,7 +199,9 @@ Description=Daemon for monitoring postgres
 After=network.target pgbouncer.service postgres.service
 
 [Service]
-ExecStart=/usr/bin/pgdaemon -etcd-host etcd0
+ExecStart=/usr/bin/pgdaemon -etcd-host etcd0 -cluster-name $PG_CLUSTER_NAME
+User=postgres
+Group=postgres
 Restart=always
 RestartSec=1s
 
@@ -180,10 +211,6 @@ EOF
 
 
     sudo tee "$directory/bootstrap.sh" > /dev/null <<EOF
-# Initialize data and start services
-sudo -u postgres initdb --locale=C.UTF-8 --encoding=UTF8 -D /var/lib/postgres/data
-systemctl enable postgresql.service
-
 # Allow connections from all hosts, without password
 echo "host    all             all             0.0.0.0/0            trust" >> /var/lib/postgres/data/pg_hba.conf
 
@@ -208,7 +235,6 @@ echo 'wal_level = logical' >> /var/lib/postgres/data/postgresql.conf
 echo '"postgres" ""' > /etc/pgbouncer/userlist.txt
 chown -R pgbouncer:pgbouncer /etc/pgbouncer
 chmod 640 /etc/pgbouncer/userlist.txt
-systemctl enable pgbouncer.service
 
 # pgdaemon
 systemctl enable pgdaemon.service
@@ -277,50 +303,12 @@ EOF
     sudo systemd-nspawn -D "$directory" bash /bootstrap.sh
 }
 
-setup_lab_network() {
-    sudo mkdir -p /run/systemd/network
+initialize_cluster_state() {
+    local etcd_ip="${HOST_IPS[etcd0]}"
 
-    sudo tee /run/systemd/network/$NETDEV_NAME.netdev > /dev/null <<EOF
-[NetDev]
-Name=$NETDEV_NAME
-Kind=bridge
-EOF
-
-    sudo tee /run/systemd/network/$NETDEV_NAME.network > /dev/null <<EOF
-[Match]
-Name=$NETDEV_NAME
-
-[Network]
-Address=${HOST_IPS[host]}/$IP_CIDR_SLASH
-IPv4Forwarding=yes
-EOF
-
-    sudo systemctl daemon-reload # I don't think daemon-reload is necessary for network stuff
-    sudo systemctl restart systemd-networkd
-}
-
-setup_replication() {
-    if [[ $# -ne 2 ]]; then
-        echo "Usage: setup_replication <leader> <follower>"
-        return 1
-    fi
-
-    local leader="$1"
-    local follower="$2"
-    local follower_ip="${HOST_IPS[$follower]}"
-
-    set -x
-
-    $SSH "root@$follower_ip" "bash -c \"
-set -euo pipefail
-
-systemctl stop postgresql.service
-rm -rf /var/lib/postgres/data/* || true
-sudo -u postgres pg_basebackup -d 'host=$leader user=postgres' -D /var/lib/postgres/data -R -P
-systemctl start postgresql.service
-systemctl status postgresql.service
-\""
-
+    # Initialize the cluster state in etcd
+    echo "Initializing cluster state in etcd at $etcd_ip"
+    go run -C pgdaemon . -etcd-host "${HOST_IPS[etcd0]}" -primary-name pg0 -replica-names pg1,pg2 -cluster-name my-cluster init-cluster
 }
 
 run_pgbench() {
@@ -431,8 +419,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     echo "Waiting for startup"
     sleep 5
 
-    setup_replication pg0 pg1
-    setup_replication pg0 pg2
+    initialize_cluster_state
 
     download_imdb_datasets
     populate_imdb_data pg0

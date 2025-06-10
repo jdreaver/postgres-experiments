@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
+	"os"
+	"os/exec"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -122,18 +126,84 @@ func checkDB(host string, port int, user string, connTimeout time.Duration) (boo
 
 	conn, err := connectPostgres(ctx, host, port, user)
 	if err != nil {
-		return false, fmt.Errorf("failed to connect to Postgres: %v", err)
+		return false, fmt.Errorf("failed to connect to Postgres: %w", err)
 	}
 	defer conn.Close(ctx)
 
 	var n int
 	err = conn.QueryRow(ctx, "SELECT 1").Scan(&n)
 	if err != nil {
-		return false, fmt.Errorf("query error: %v", err)
+		return false, fmt.Errorf("query error: %w", err)
 	}
 	if n != 1 {
 		return false, fmt.Errorf("unexpected result from SELECT 1")
 	}
 
 	return true, nil
+}
+
+const pgDataDir = "/var/lib/postgres/data"
+
+func configureAsReplica(ctx context.Context, primaryHost string, primaryPort int, user string) error {
+	_, err := os.Stat(pgDataDir)
+	if errors.Is(err, os.ErrNotExist) {
+		log.Printf("Initializing replica for primary %s database in %s", primaryHost, pgDataDir)
+
+		// TODO: Ensure postgres is not running
+
+		cmd := exec.Command("pg_basebackup", "-h", primaryHost, "-p", fmt.Sprintf("%d", primaryPort), "-U", user, "-D", pgDataDir, "-R", "-P")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to initialize replica database: %w", err)
+		}
+	}
+
+	// TODO: Check if pg_is_in_recovery() is false. If so, we need
+	// to point to new primary and become a replica.
+
+	return nil
+}
+
+func configureAsPrimary() error {
+	_, err := os.Stat(pgDataDir)
+	if errors.Is(err, os.ErrNotExist) {
+		log.Printf("Initializing primary database in %s", pgDataDir)
+
+		// TODO: Ensure postgres is not running
+
+		cmd := exec.Command("initdb", "--pgdata", pgDataDir)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to initialize primary database: %w", err)
+		}
+	}
+
+	// TODO: Check if pg_is_in_recovery() is true, and do a
+	// pg_promote() (probably requires careful coordination)
+
+	return nil
+}
+
+func ensurePostgresRunning() error {
+	// TODO: We should be able to surmise whether or not we need to
+	// do this based on the state we fetch about the node. If we
+	// can't connect, we should check if postgres is running, and
+	// cache that result.
+
+	cmd := exec.Command("systemctl", "is-active", "--quiet", "postgresql.service")
+	if err := cmd.Run(); err != nil {
+		log.Println("Postgres might not not running, attempting to start it")
+		startCmd := exec.Command("sudo", "systemctl", "start", "postgresql.service")
+		startCmd.Stdout = os.Stdout
+		startCmd.Stderr = os.Stderr
+		if err := startCmd.Run(); err != nil {
+			return fmt.Errorf("failed to start Postgres: %w", err)
+		}
+	}
+
+	return nil
 }
