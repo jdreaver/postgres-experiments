@@ -27,11 +27,13 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
 
     echo -e "${BOLD}${CYAN}=== ${LABEL}running: $*${NC}"
 
-    # Run the actual command and prefix output
-    if "$@" 2>&1 | sed "s#^#${CYAN}${LABEL}${NC}#"; then
-      echo -e "${BOLD}${GREEN}=== ${LABEL}SUCCESS${NC}"
-    else
-      echo -e "${BOLD}${RED}=== ${LABEL}FAILED${NC}"
-      exit 1
-    fi
+    # Define ERR trap before the command so we print the failing module
+    # in case there is an error.
+    trap 'status=$?; echo -e "${BOLD}${RED}=== ${LABEL}FAILED${NC}" >&2; exit $status' ERR
+
+    # Run command. Note we do this outside of an if statement so that
+    # set -e works. sed is to prefix output
+    "$@" 2>&1 | sed "s#^#${CYAN}${LABEL}${NC}#"
+
+    echo -e "${BOLD}${GREEN}=== ${LABEL}SUCCESS${NC}"
 fi
