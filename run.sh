@@ -12,42 +12,26 @@ done
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     set -euo pipefail
 
-    if [[ $# -ne 0 ]]; then
-        "$@"
-        exit
+    LABEL=""
+    if [[ -n "$TARGET" ]]; then
+        LABEL="[$TARGET] "
     fi
 
-    setup_lab_network
-    create_pgbase_machine
-    build_pgdaemon
+    TARGET=${TARGET:-"unknown_target"}
 
-    create_machine "etcd0"
-    setup_etcd "etcd0"
-    sudo machinectl start etcd0
+    CYAN=$(tput setaf 6)
+    GREEN=$(tput setaf 2)
+    RED=$(tput setaf 1)
+    BOLD=$(tput bold)
+    NC=$(tput sgr0)
 
-    create_machine "haproxy0"
-    setup_haproxy "haproxy0"
-    sudo machinectl start haproxy0
+    echo -e "${BOLD}${CYAN}=== ${LABEL}running: $*${NC}"
 
-    create_machine "pg0"
-    setup_postgres "pg0"
-    sudo machinectl start pg0
-
-    create_machine "pg1"
-    setup_postgres "pg1"
-    sudo machinectl start pg1
-
-    create_machine "pg2"
-    setup_postgres "pg2"
-    sudo machinectl start pg2
-
-    initialize_cluster_state
-
-    echo "Waiting for startup"
-    sleep 10
-
-    download_imdb_datasets
-    populate_imdb_data pg0
-
-    run_pgbench pg0
+    # Run the actual command and prefix output
+    if "$@" 2>&1 | sed "s/^/${CYAN}${LABEL}${NC}/"; then
+      echo -e "${BOLD}${GREEN}=== ${LABEL}SUCCESS${NC}"
+    else
+      echo -e "${BOLD}${RED}=== ${LABEL}FAILED${NC}"
+      exit 1
+    fi
 fi
