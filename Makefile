@@ -41,12 +41,8 @@ init_cluster: etcd0
 	$(RUN) initialize_cluster_state
 
 imdb: pg0 init_cluster
-	@echo Waiting for pg0 to be ready...
-	sleep 20 # TODO: Replace with a proper wait mechanism
 	$(RUN) download_imdb_datasets
 	$(RUN) populate_imdb_data $<
 
 pgbench: pg0 init_cluster
-	@echo Waiting for pg0 to be ready...
-	sleep 20 # TODO: Replace with a proper wait mechanism
 	$(RUN) run_pgbench $<

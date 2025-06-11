@@ -29,6 +29,7 @@ download_imdb_datasets() {
 
 populate_imdb_data() {
     local leader="$1"
+    wait_for_host_tcp "$leader" 5432
 
     local leader_ip="${HOST_IPS[$leader]}"
     local data_dir="$SCRIPT_DIR/imdb-data"
@@ -45,7 +46,7 @@ populate_imdb_data() {
     copy_tsv() {
         local table_name="$1"
         local file_path="$2"
-        echo "Copying $table_name data from $file_path to database 'imdb' on $leader ($leader_ip)..."
+        echo "Copying $table_name data from $file_path to database 'imdb' on $leader..."
         $psql_cmd -d imdb -c "\copy $table_name FROM '$file_path' DELIMITER E'\t' QUOTE E'\b' NULL '\N' CSV HEADER"
     }
 
@@ -57,5 +58,5 @@ populate_imdb_data() {
     copy_tsv "title_ratings" "$data_dir/title.ratings.tsv"
     copy_tsv "name_basics" "$data_dir/name.basics.tsv"
 
-    echo "IMDB data populated in database 'imdb' for $leader_ip"
+    echo "IMDB data populated in database 'imdb' for $leader"
 }

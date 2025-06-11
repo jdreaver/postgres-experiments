@@ -62,6 +62,8 @@ run_pgbench() {
     fi
 
     local leader="$1"
+    wait_for_host_tcp "$leader" 5432
+
     local leader_ip="${HOST_IPS[$leader]}"
 
     # Initialize with scale factor -s
