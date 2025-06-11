@@ -3,6 +3,7 @@
 Document what I've done so far. Maybe with some nice ASCII art.
 
 Run MongoDB locally too.
+- Create cluster somehow
 - Get benchmark MongoDB data set and get it replicated into postgres so we can compare apples to apples
 
 Add tests! Ideally reconciliation logic is pure enough we can test, and/or use a mock backend

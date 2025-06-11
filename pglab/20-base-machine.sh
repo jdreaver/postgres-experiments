@@ -37,21 +37,39 @@ create_pgbase_machine() {
     sudo pacstrap "${pacstrap_args[@]}" "$directory" "${packages[@]}"
 
     # Download etcd from https://github.com/etcd-io/etcd/releases/
+    echo "Installing etcd..."
     local etcd_version=v3.6.1
-    local filename="etcd-${etcd_version}-linux-amd64.tar.gz"
-    local etcd_url="https://github.com/etcd-io/etcd/releases/download/${etcd_version}/$filename"
-    curl -L "$etcd_url" -o "/tmp/$filename"
-    sudo tar -xzf "/tmp/$filename" -C "$directory/usr/bin" --strip-components=1
+    local etcd_filename="etcd-${etcd_version}-linux-amd64.tar.gz"
+    local etcd_url="https://github.com/etcd-io/etcd/releases/download/${etcd_version}/$etcd_filename"
+    curl -L "$etcd_url" -o "/tmp/$etcd_filename"
+    sudo tar -xzf "/tmp/$etcd_filename" -C "$directory/usr/bin" --strip-components=1
+
+    # Download mongodb with URL from
+    # https://www.mongodb.com/try/download/community
+    echo "Installing mongo..."
+    local mongo_filename="mongodb-linux-x86_64-ubuntu2404-8.0.10.tgz"
+    local mongo_url="https://fastdl.mongodb.org/linux/$mongo_filename"
+    curl -L "$mongo_url" -o "/tmp/$mongo_filename"
+    rm -rf "/tmp/mongo-unpacked"
+    mkdir "/tmp/mongo-unpacked"
+    tar -xzf "/tmp/$mongo_filename" -C "/tmp/mongo-unpacked"  --strip-components=1
+    sudo cp "/tmp/mongo-unpacked/bin/mongod" "$directory/usr/bin/mongod"
+    sudo cp "/tmp/mongo-unpacked/bin/mongos" "$directory/usr/bin/mongos"
+
+    # Download mongosh from https://www.mongodb.com/try/download/shell
+    echo "Installing mongosh..."
+    local mongosh_filename=mongosh-2.5.2-linux-x64.tgz
+    local mongosh_url="https://downloads.mongodb.com/compass/$mongosh_filename"
+    curl -L "$mongosh_url" -o "/tmp/$mongosh_filename"
+    rm -rf "/tmp/mongosh-unpacked"
+    mkdir "/tmp/mongosh-unpacked"
+    tar -xzf "/tmp/$mongosh_filename" -C "/tmp/mongosh-unpacked"  --strip-components=1
+    sudo cp "/tmp/mongosh-unpacked/bin/mongosh" "$directory/usr/bin/mongosh"
 
     # Populate /etc/hosts from HOST_IPS
     for host in "${HOSTS[@]}"; do
         echo "${HOST_IPS[$host]} $host" | sudo tee -a "$directory/etc/hosts"
     done
-
-    # Allow postgres user to start and stop postgres
-    sudo tee "$directory/etc/sudoers.d/100-postgres" > /dev/null <<EOF
-postgres ALL=(ALL) NOPASSWD: /usr/bin/systemctl start postgresql.service, /usr/bin/systemctl stop postgresql.service, /usr/bin/systemctl start pgbouncer.service, /usr/bin/systemctl stop pgbouncer.service
-EOF
 
     sudo tee "$directory/bootstrap.sh" > /dev/null <<EOF
 # Don't require a password for root in the container
@@ -99,6 +117,9 @@ create_machine() {
             ;;
         pg*)
             setup_postgres "$name"
+            ;;
+        mongo*)
+            setup_mongo "$name"
             ;;
         *)
             echo "ERROR: Unknown machine name '$name'."
