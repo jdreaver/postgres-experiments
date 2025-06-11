@@ -22,19 +22,8 @@ pgbase:
 	$(RUN) create_pgbase_machine
 	$(RUN) build_pgdaemon
 
-$(PG_MACHINES): network pgbase
+$(MACHINES): network pgbase
 	$(RUN) create_machine $@
-	$(RUN) setup_postgres $@
-	$(RUN) sudo machinectl start $@
-
-$(ETCD_MACHINES): network pgbase
-	$(RUN) create_machine $@
-	$(RUN) setup_etcd $@
-	$(RUN) sudo machinectl start $@
-
-$(HAPROXY_MACHINES): network pgbase
-	$(RUN) create_machine $@
-	$(RUN) setup_haproxy $@
 	$(RUN) sudo machinectl start $@
 
 init_cluster: etcd0

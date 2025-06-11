@@ -88,6 +88,34 @@ create_machine() {
 
     local name="$1"
 
+    create_machine_basics "$name"
+
+    case "$name" in
+        etcd*)
+            setup_etcd "$name"
+            ;;
+        haproxy*)
+            setup_haproxy "$name"
+            ;;
+        pg*)
+            setup_postgres "$name"
+            ;;
+        *)
+            echo "ERROR: Unknown machine name '$name'."
+            return 1
+            ;;
+    esac
+}
+
+
+create_machine_basics() {
+    if [[ $# -ne 1 ]]; then
+        echo "Usage: create_machine_basics <name>"
+        return 1
+    fi
+
+    local name="$1"
+
     # Stop machine if it is running
     if sudo machinectl status "$name" &>/dev/null; then
         echo "Stopping existing machine '$name'..."

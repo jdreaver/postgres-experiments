@@ -1,8 +1,5 @@
 # TODO
 
-Makefile:
-- Consider sentinel files for rules instead of phonies, and then forcing rebuilds instead of needing to remember `-o` option
-
 Document what I've done so far. Maybe with some nice ASCII art.
 
 Run MongoDB locally too.
