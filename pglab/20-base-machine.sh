@@ -140,12 +140,23 @@ create_machine_basics() {
     # Stop machine if it is running
     if sudo machinectl status "$name" &>/dev/null; then
         echo "Stopping existing machine '$name'..."
-        sudo machinectl stop "$name"
+        sudo machinectl terminate "$name" || true
+
+        echo "Waiting for machine '$name' to fully stop..."
+        timeout=10
         while sudo machinectl status "$name" &>/dev/null; do
-            echo "Waiting for machine '$name' to stop..."
-            sleep 1
-            sudo machinectl kill "$name" --signal=SIGKILL &>/dev/null || true
+            sleep 0.2
+            ((timeout--))
+            if ((timeout == 0)); then
+                echo "Machine did not stop in time, sending SIGKILL..."
+                sudo machinectl kill "$name" --signal=SIGKILL || true
+                sleep 0.2
+            fi
         done
+
+        # Sometimes this mountpoint still exists, so force unmount
+        mountpoint="/run/systemd/nspawn/unix-export/$name"
+        sudo umount -lf "$mountpoint" || true
     fi
 
     local directory="/var/lib/machines/$name"
