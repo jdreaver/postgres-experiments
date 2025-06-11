@@ -132,6 +132,17 @@ create_machine() {
 
     local name="$1"
 
+    # Stop machine if it is running
+    if sudo machinectl status "$name" &>/dev/null; then
+        echo "Stopping existing machine '$name'..."
+        sudo machinectl stop "$name"
+        while sudo machinectl status "$name" &>/dev/null; do
+            echo "Waiting for machine '$name' to stop..."
+            sleep 1
+            sudo machinectl kill "$name" --signal=SIGKILL &>/dev/null || true
+        done
+    fi
+
     local directory="/var/lib/machines/$name"
 
     sudo rm -rf "$directory"
