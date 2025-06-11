@@ -28,7 +28,7 @@ if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
     echo -e "${BOLD}${CYAN}=== ${LABEL}running: $*${NC}"
 
     # Run the actual command and prefix output
-    if "$@" 2>&1 | sed "s/^/${CYAN}${LABEL}${NC}/"; then
+    if "$@" 2>&1 | sed "s#^#${CYAN}${LABEL}${NC}#"; then
       echo -e "${BOLD}${GREEN}=== ${LABEL}SUCCESS${NC}"
     else
       echo -e "${BOLD}${RED}=== ${LABEL}FAILED${NC}"
