@@ -1,7 +1,9 @@
 MACHINES =  pg0 pg1 pg2
 MACHINES += etcd0
 MACHINES += haproxy0
-MACHINES += mongo0
+
+MONGO_MACHINES = mongo0 mongo1 mongo2
+MACHINES += $(MONGO_MACHINES)
 
 RUN=./run.sh
 
@@ -32,6 +34,10 @@ $(MACHINES): network pgbase
 .PHONY: init_cluster
 init_cluster: etcd0
 	$(RUN) initialize_cluster_state
+
+.PHONY: init_replset
+init_replset: $(MONGO_MACHINES)
+	$(RUN) init_mongo_replset
 
 .PHONY: imdb
 imdb: pg0 init_cluster

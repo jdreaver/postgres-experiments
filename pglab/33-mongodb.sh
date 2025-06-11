@@ -29,6 +29,9 @@ net:
   port: 27017
   bindIp: 0.0.0.0
 
+replication:
+  replSetName: "mydb"
+
 # how the process runs
 processManagement:
   timeZoneInfo: /usr/share/zoneinfo
@@ -107,4 +110,17 @@ systemctl enable mongod.service
 EOF
 
     sudo systemd-nspawn -D "$directory" bash /bootstrap.sh
+}
+
+init_mongo_replset() {
+    wait_for_host_tcp mongo0 27017
+
+    echo "Initializing MongoDB replica set on mongo0..."
+    sudo systemd-run --machine mongo0 --quiet --pty mongosh --eval 'rs.initiate()'
+
+    for replica in mongo1 mongo2; do
+        wait_for_host_tcp "$replica" 27017
+        echo "Adding $replica to the replica set..."
+        sudo systemd-run --machine mongo0 --quiet --pty mongosh --eval "rs.add(\"$replica:27017\")"
+    done
 }

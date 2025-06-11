@@ -16,6 +16,8 @@ HOST_IPS[pg2]=10.42.0.12; HOSTS+=(pg2)
 HOST_IPS[etcd0]=10.42.0.20; HOSTS+=(etcd0)
 HOST_IPS[haproxy0]=10.42.0.30; HOSTS+=(haproxy0)
 HOST_IPS[mongo0]=10.42.0.40; HOSTS+=(mongo0)
+HOST_IPS[mongo1]=10.42.0.41; HOSTS+=(mongo1)
+HOST_IPS[mongo2]=10.42.0.42; HOSTS+=(mongo2)
 
 IP_CIDR_SLASH=24
 
