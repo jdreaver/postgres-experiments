@@ -25,15 +25,6 @@ Make distinction between "can't connect to postgres" and "my queries failed".
 
 Better structured logging. Use context more, like to store goroutine "name" (leader, node reconciler, health check server)
 
-(This might not be right. We need _received_ timestamp, not replay) We can use `write_lag` from primary) Store replication lag (accounting for 0 lag) in replica observed state:
-
-    ```
-    SELECT CASE
-        WHEN pg_last_wal_receive_lsn() = pg_last_wal_replay_lsn() THEN 0
-        ELSE EXTRACT (EPOCH FROM now() - pg_last_xact_replay_timestamp())
-    END AS log_delay;
-    ```
-
 Use https://github.com/spf13/viper to separate daemon and init command line flags and to support more configuration possibilities
 
 Investigate why inserting imdb data is so much slower. Used to take like 1.5 minutes total, now it is like 8 minutes. Replicas? Vacuuming?
