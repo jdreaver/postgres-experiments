@@ -79,7 +79,7 @@ run_pgbench() {
 }
 
 build_pgdaemon() {
-    go build -C "$SCRIPT_DIR/pgdaemon" -o "$SCRIPT_DIR/pgdaemon" || {
+    go build -C "$SCRIPT_DIR/pgdaemon" || {
         echo "Failed to build pgdaemon"
         return 1
     }

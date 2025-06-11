@@ -36,35 +36,16 @@ create_pgbase_machine() {
 
     sudo pacstrap "${pacstrap_args[@]}" "$directory" "${packages[@]}"
 
-    # Download etcd from https://github.com/etcd-io/etcd/releases/
-    echo "Installing etcd..."
-    local etcd_version=v3.6.1
-    local etcd_filename="etcd-${etcd_version}-linux-amd64.tar.gz"
-    local etcd_url="https://github.com/etcd-io/etcd/releases/download/${etcd_version}/$etcd_filename"
-    curl -L "$etcd_url" -o "/tmp/$etcd_filename"
-    sudo tar -xzf "/tmp/$etcd_filename" -C "$directory/usr/bin" --strip-components=1
+    mkdir -p "$CACHE_DIR"
 
-    # Download mongodb with URL from
-    # https://www.mongodb.com/try/download/community
-    echo "Installing mongo..."
-    local mongo_filename="mongodb-linux-x86_64-ubuntu2404-8.0.10.tgz"
-    local mongo_url="https://fastdl.mongodb.org/linux/$mongo_filename"
-    curl -L "$mongo_url" -o "/tmp/$mongo_filename"
-    rm -rf "/tmp/mongo-unpacked"
-    mkdir "/tmp/mongo-unpacked"
-    tar -xzf "/tmp/$mongo_filename" -C "/tmp/mongo-unpacked"  --strip-components=1
-    sudo cp "/tmp/mongo-unpacked/bin/mongod" "$directory/usr/bin/mongod"
-    sudo cp "/tmp/mongo-unpacked/bin/mongos" "$directory/usr/bin/mongos"
+    download_etcd
+    sudo cp "$CACHE_DIR"/etcd-bin/{etcd,etcdctl,etcdutl} "$directory/usr/bin/"
 
-    # Download mongosh from https://www.mongodb.com/try/download/shell
-    echo "Installing mongosh..."
-    local mongosh_filename=mongosh-2.5.2-linux-x64.tgz
-    local mongosh_url="https://downloads.mongodb.com/compass/$mongosh_filename"
-    curl -L "$mongosh_url" -o "/tmp/$mongosh_filename"
-    rm -rf "/tmp/mongosh-unpacked"
-    mkdir "/tmp/mongosh-unpacked"
-    tar -xzf "/tmp/$mongosh_filename" -C "/tmp/mongosh-unpacked"  --strip-components=1
-    sudo cp "/tmp/mongosh-unpacked/bin/mongosh" "$directory/usr/bin/mongosh"
+    download_mongod
+    sudo cp "$CACHE_DIR"/mongod-bin/bin/mongod "$directory/usr/bin/"
+
+    download_mongosh
+    sudo cp "$CACHE_DIR"/mongosh-bin/bin/mongosh "$directory/usr/bin/"
 
     # Populate /etc/hosts from HOST_IPS
     for host in "${HOSTS[@]}"; do
@@ -96,6 +77,52 @@ systemctl enable sshd.service
 EOF
 
     sudo systemd-nspawn -D "$directory" bash /bootstrap.sh
+}
+
+download_etcd() {
+    # Download etcd from https://github.com/etcd-io/etcd/releases/
+    local etcd_version=v3.6.1
+    local etcd_filename="etcd-${etcd_version}-linux-amd64.tar.gz"
+    local dest_file="$CACHE_DIR/$etcd_filename"
+
+    if [[ ! -f "$dest_file" ]]; then
+        echo "Downloading etcd $etcd_version to $dest_file..."
+        local etcd_url="https://github.com/etcd-io/etcd/releases/download/${etcd_version}/$etcd_filename"
+        curl -L "$etcd_url" -o "$dest_file"
+        rm -rf "$CACHE_DIR/etcd-bin"
+        mkdir -p "$CACHE_DIR/etcd-bin"
+        tar -xzf "$dest_file" -C "$CACHE_DIR/etcd-bin" --strip-components=1
+    fi
+}
+
+download_mongod() {
+    # Download mongodb with URL from
+    # https://www.mongodb.com/try/download/community
+    local mongo_filename="mongodb-linux-x86_64-ubuntu2404-8.0.10.tgz"
+    local dest_file="$CACHE_DIR/$mongo_filename"
+
+    if [[ ! -f "$dest_file" ]]; then
+        echo "Downloading $dest_file..."
+        local mongo_url="https://fastdl.mongodb.org/linux/$mongo_filename"
+        curl -L "$mongo_url" -o "$dest_file"
+        rm -rf "$CACHE_DIR/mongod-bin"
+        mkdir -p "$CACHE_DIR/mongod-bin"
+        tar -xzf "$dest_file" -C "$CACHE_DIR/mongod-bin" --strip-components=1
+    fi
+}
+
+download_mongosh() {
+    # Download mongosh from https://www.mongodb.com/try/download/shell
+    local mongosh_filename=mongosh-2.5.2-linux-x64.tgz
+    local dest_file="$CACHE_DIR/$mongosh_filename"
+
+    if [[ ! -f "$dest_file" ]]; then
+        local mongosh_url="https://downloads.mongodb.com/compass/$mongosh_filename"
+        curl -L "$mongosh_url" -o "$dest_file"
+        rm -rf "$CACHE_DIR/mongosh-bin"
+        mkdir -p "$CACHE_DIR/mongosh-bin"
+        tar -xzf "$dest_file" -C "$CACHE_DIR/mongosh-bin" --strip-components=1
+    fi
 }
 
 create_machine() {

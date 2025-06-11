@@ -3,6 +3,8 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
+CACHE_DIR="$SCRIPT_DIR/cache"
+cd "$SCRIPT_DIR"
 
 for f in "$SCRIPT_DIR/pglab/"*.sh; do
     source "$f"
