@@ -9,7 +9,8 @@ Run `make -j` to build the lab and run benchmarks. Tip: you can use `make -o [ru
 # TODO
 
 Makefile:
-- Proper way to wait for etcd to be ready before initializing state, and proper way to wait for the cluster to be ready before accepting connections. Ideally this is a separate rule that imdb and pgbench can depend on, and then we can use `-o` to skip deps when we want.
+- Proper way to wait for the cluster to be ready before accepting connections. Ideally this is a separate rule that imdb and pgbench can depend on, and then we can use `-o` to skip deps when we want.
+- Consider sentinel files for rules instead of phonies, and then forcing rebuilds instead of needing to remember `-o` option
 
 Document what I've done so far. Maybe with some nice ASCII art.
 

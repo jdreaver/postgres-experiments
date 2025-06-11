@@ -61,9 +61,12 @@ EOF
 }
 
 initialize_cluster_state() {
-    local etcd_ip="${HOST_IPS[etcd0]}"
+    # Wait for etcd to be ready
+    while ! nc -z -w 1 "${HOST_IPS[etcd0]}" 2379; do
+        echo "Waiting for etcd0 to be healthy..."
+        sleep 1
+    done
 
-    # Initialize the cluster state in etcd
-    echo "Initializing cluster state in etcd at $etcd_ip"
-    go run -C pgdaemon . -etcd-host "${HOST_IPS[etcd0]}" -primary-name pg0 -replica-names pg1,pg2 -cluster-name my-cluster init-cluster
+    echo "Initializing cluster state in etcd0"
+    go run -C pgdaemon . -etcd-host etcd0 -primary-name pg0 -replica-names pg1,pg2 -cluster-name my-cluster init-cluster
 }

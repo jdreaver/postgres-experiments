@@ -9,7 +9,7 @@ RUN=./run.sh
 %: export TARGET=$@
 
 .PHONY: all
-all: network $(MACHINES) initialize_cluster_state imdb pgbench
+all: network $(MACHINES) init_cluster imdb pgbench
 
 .DEFAULT_GOAL := machines
 .PHONY: machines
@@ -37,18 +37,16 @@ $(HAPROXY_MACHINES): network pgbase
 	$(RUN) setup_haproxy $@
 	$(RUN) sudo machinectl start $@
 
-initialize_cluster_state: etcd0
-	@echo Waiting for etcd0 to be ready...
-	sleep 3 # TODO: Replace with a proper wait mechanism
+init_cluster: etcd0
 	$(RUN) initialize_cluster_state
 
-imdb: pg0 initialize_cluster_state
+imdb: pg0 init_cluster
 	@echo Waiting for pg0 to be ready...
 	sleep 20 # TODO: Replace with a proper wait mechanism
 	$(RUN) download_imdb_datasets
 	$(RUN) populate_imdb_data $<
 
-pgbench: pg0 initialize_cluster_state
+pgbench: pg0 init_cluster
 	@echo Waiting for pg0 to be ready...
 	sleep 20 # TODO: Replace with a proper wait mechanism
 	$(RUN) run_pgbench $<
