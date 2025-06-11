@@ -11,11 +11,11 @@ RUN=./run.sh
 %: export TARGET=$@
 
 .PHONY: all
-all: network $(MACHINES) init_cluster imdb pgbench
+all: network $(MACHINES) init_cluster init_replset imdb pgbench
 
 .DEFAULT_GOAL := machines
 .PHONY: machines
-machines: $(MACHINES)
+machines: $(MACHINES) init_cluster init_replset
 
 .PHONY: network
 network:
