@@ -2,6 +2,27 @@
 
 Document what I've done so far. Maybe with some nice ASCII art.
 
+Failover:
+- Plan and refactors:
+  - Add a "cluster state", not just desired state. Put under `/cluster/observed-state` and move desired state under `/cluster/desired-state`
+  - Dirty failover: very simple. Just do `pg_promote(wait => true)` or `ALTER SYSTEM SET primary_conninfo = '...'` + `SELECT pg_reload_conf();`
+  - State machine with state
+  - Make reconciliation logic pure
+  - Stop primary writes (but not primary process!) and wait for a secondary to catch up (with timeout) before failing over
+  - Detect degradation automatically and fail over
+- First to manual failover where we select new primary with pgdaemon
+  - Rename `init` command to something else, like `set-cluster-state`
+- Failover process:
+  - Cluster states: `provisioning`, `healthy`, `failing-over`, `unhealthy`?
+  - Leader detects desired primary does not match current primary. Sets cluster to a `failover` state.
+  - While in `failover` state, primary queries are canceled and inbound traffic is stopped and we wait for replicas to catch up (with a configurable timeout)
+    - Can do canceling/stopping in v2 of failover
+  - Then primary is stopped and the replica that is most up to date is selected as new primary
+  - New primary will stop replication
+  - Replicas will point to new primary
+
+- Automated failover based on health signals
+
 Run MongoDB locally too.
 - Get benchmark MongoDB data set and get it replicated into postgres so we can compare apples to apples
 
