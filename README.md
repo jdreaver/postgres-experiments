@@ -4,7 +4,31 @@ Repo where I mess around with postgres.
 
 ## Running
 
-Run `make -j` to build the lab and run benchmarks. Tip: you can use `make -o [rule]` to skip a rule as a dependency.
+Run `make -j` to build and run the lab machines. Tip: you can use `make -o [rule]` to skip a rule as a dependency.
+
+`make -j all` will also run benchmarks and other stuff. Look at the Makefile to see stuff to do.
+
+You can connect to postgres via:
+- `haproxy0` port 5432 for primary
+- `haproxy0` port 5433 for any node
+- Any postgres node on port 6432 for pgbouncer
+- Any postgres directly on port 5432
+
+Connect to MongoDB with `mongosh --host mongo0,mongo1,mongo2`
+
+## Useful etcd commands
+
+See all keys/values:
+
+```
+$ watch -n 0.1 etcdctl get '""' --prefix
+```
+
+Same, but with JSON parsing for the value
+
+```
+$ etcdctl get '' --prefix --write-out=json | jq '.kvs[] | { key: .key | @base64d, value: (.value | @base64d | try fromjson) // (.value | @base64d) }'
+
 
 # Resources
 
@@ -24,17 +48,3 @@ AWS/DynamoDB:
 - https://aws.amazon.com/blogs/database/building-distributed-locks-with-the-dynamodb-lock-client/
 - https://github.com/awslabs/amazon-dynamodb-lock-client
 - https://aws.amazon.com/builders-library/leader-election-in-distributed-systems/
-
-## Useful etcd commands
-
-See all keys/values:
-
-```
-$ watch -n 0.1 etcdctl get '""' --prefix
-```
-
-Same, but with JSON parsing for the value
-
-```
-$ etcdctl get '' --prefix --write-out=json | jq '.kvs[] | { key: .key | @base64d, value: (.value | @base64d | try fromjson) // (.value | @base64d) }'
-```
