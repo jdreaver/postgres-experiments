@@ -62,7 +62,7 @@ func daemon(ctx context.Context, store StateStore, conf config) {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return leaderReconcilerLoop(ctx, store)
+		return leaderReconcilerLoop(ctx, store, conf)
 	})
 
 	g.Go(func() error {

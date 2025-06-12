@@ -10,20 +10,21 @@ import (
 )
 
 type config struct {
-	command       string
-	etcdHost      string
-	etcdPort      string
-	leaseDuration time.Duration
-	nodeName      string
-	clusterName   string
-	postgresHost  string
-	postgresPort  int
-	postgresUser  string
-	pgBouncerHost string
-	pgBouncerPort int
-	listenAddress string
-	primaryName   string
-	replicaNames  []string
+	command          string
+	etcdHost         string
+	etcdPort         string
+	leaseDuration    time.Duration
+	nodeName         string
+	clusterName      string
+	postgresHost     string
+	postgresPort     int
+	postgresUser     string
+	pgBouncerHost    string
+	pgBouncerPort    int
+	listenAddress    string
+	primaryName      string
+	replicaNames     []string
+	failoverTimeout  time.Duration
 }
 
 func parseFlags() config {
@@ -40,6 +41,7 @@ func parseFlags() config {
 	listenAddress := flag.String("listen", "0.0.0.0:8080", "Address to listen on")
 	primaryName := flag.String("primary-name", "", "Name of the primary node (for initialization)")
 	replicaNames := flag.String("replica-names", "", "CSV of replica names (for initialization)")
+	failoverTimeout := flag.Duration("failover-timeout", 10*time.Second, "Time to wait for replicas to catch up during failover")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: pgdaemon [command] [options]\n")
@@ -69,19 +71,20 @@ func parseFlags() config {
 	}
 
 	return config{
-		command:       command,
-		etcdHost:      *etcdHost,
-		etcdPort:      *etcdPort,
-		leaseDuration: *leaseDuration,
-		nodeName:      *nodeName,
-		clusterName:   *clusterName,
-		postgresHost:  *pgHost,
-		postgresPort:  *pgPort,
-		postgresUser:  *pgUser,
-		pgBouncerHost: *pbHost,
-		pgBouncerPort: *pbPort,
-		listenAddress: *listenAddress,
-		primaryName:   *primaryName,
-		replicaNames:  strings.Split(*replicaNames, ","),
+		command:         command,
+		etcdHost:        *etcdHost,
+		etcdPort:        *etcdPort,
+		leaseDuration:   *leaseDuration,
+		nodeName:        *nodeName,
+		clusterName:     *clusterName,
+		postgresHost:    *pgHost,
+		postgresPort:    *pgPort,
+		postgresUser:    *pgUser,
+		pgBouncerHost:   *pbHost,
+		pgBouncerPort:   *pbPort,
+		listenAddress:   *listenAddress,
+		primaryName:     *primaryName,
+		replicaNames:    strings.Split(*replicaNames, ","),
+		failoverTimeout: *failoverTimeout,
 	}
 }

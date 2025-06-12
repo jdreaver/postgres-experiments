@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -151,11 +152,51 @@ func configureAsReplica(primaryHost string, primaryPort int, user string) error 
 		if err := commonPostgresConfig(); err != nil {
 			return fmt.Errorf("failed to configure replica database: %w", err)
 		}
+	} else {
+		// Database already exists, check if we need to reconfigure for new primary
+		if err := updateReplicaConfiguration(primaryHost, primaryPort); err != nil {
+			log.Printf("Failed to update replica configuration: %v", err)
+			// For now, just log the error and continue
+		}
 	}
 
-	// TODO: Check if pg_is_in_recovery() is false. If so, we need
-	// to point to new primary and become a replica.
+	return nil
+}
 
+func updateReplicaConfiguration(primaryHost string, primaryPort int) error {
+	// Update postgresql.auto.conf to point to new primary
+	autoConfPath := pgDataDir + "/postgresql.auto.conf"
+	
+	primaryConnInfo := fmt.Sprintf("host=%s port=%d user=postgres", primaryHost, primaryPort)
+	
+	// Read existing auto.conf
+	content := ""
+	if data, err := os.ReadFile(autoConfPath); err == nil {
+		content = string(data)
+	}
+	
+	// Update or add primary_conninfo
+	lines := strings.Split(content, "\n")
+	found := false
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "primary_conninfo") {
+			lines[i] = fmt.Sprintf("primary_conninfo = '%s'", primaryConnInfo)
+			found = true
+			break
+		}
+	}
+	
+	if !found {
+		lines = append(lines, fmt.Sprintf("primary_conninfo = '%s'", primaryConnInfo))
+	}
+	
+	// Write back to file
+	newContent := strings.Join(lines, "\n")
+	if err := os.WriteFile(autoConfPath, []byte(newContent), 0644); err != nil {
+		return fmt.Errorf("failed to update postgresql.auto.conf: %w", err)
+	}
+	
+	log.Printf("Updated replica configuration to connect to primary %s:%d", primaryHost, primaryPort)
 	return nil
 }
 
@@ -263,4 +304,110 @@ func ensureSystemdUnitRunning(name string) error {
 	}
 
 	return nil
+}
+
+// stopPostgres gracefully stops the PostgreSQL service
+func stopPostgres() error {
+	log.Printf("Stopping PostgreSQL service")
+	cmd := exec.Command("sudo", "systemctl", "stop", "postgresql.service")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to stop PostgreSQL: %w", err)
+	}
+	return nil
+}
+
+// promoteReplica promotes a replica to become the new primary
+func promoteReplica(host string, port int, user string) error {
+	log.Printf("Promoting replica at %s:%d to primary", host, port)
+	
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	conn, err := connectPostgres(ctx, host, port, user)
+	if err != nil {
+		return fmt.Errorf("failed to connect to replica for promotion: %w", err)
+	}
+	defer conn.Close(ctx)
+
+	// Check if this is actually a replica
+	var isInRecovery bool
+	if err := conn.QueryRow(ctx, "SELECT pg_is_in_recovery()").Scan(&isInRecovery); err != nil {
+		return fmt.Errorf("failed to check recovery status: %w", err)
+	}
+
+	if !isInRecovery {
+		return fmt.Errorf("node is not in recovery mode - cannot promote")
+	}
+
+	// Promote the replica
+	if _, err := conn.Exec(ctx, "SELECT pg_promote()"); err != nil {
+		return fmt.Errorf("failed to promote replica: %w", err)
+	}
+
+	log.Printf("Successfully promoted replica at %s:%d to primary", host, port)
+	return nil
+}
+
+// parseLSN parses a PostgreSQL LSN string and returns a comparable value
+func parseLSN(lsn string) (uint64, error) {
+	if lsn == "" {
+		return 0, nil
+	}
+
+	var high, low uint32
+	if _, err := fmt.Sscanf(lsn, "%X/%X", &high, &low); err != nil {
+		return 0, fmt.Errorf("failed to parse LSN %s: %w", lsn, err)
+	}
+
+	return (uint64(high) << 32) | uint64(low), nil
+}
+
+// findBestReplica finds the replica with the highest written LSN
+func findBestReplica(replicas map[string]*NodeObservedState, excludePrimary string) (string, error) {
+	var bestNode string
+	var bestLSN uint64
+
+	for nodeName, state := range replicas {
+		if nodeName == excludePrimary {
+			continue
+		}
+
+		// Skip nodes with errors
+		if state.Error != nil {
+			log.Printf("Skipping node %s due to error: %s", nodeName, *state.Error)
+			continue
+		}
+
+		// Skip nodes that are primaries
+		if state.IsPrimary != nil && *state.IsPrimary {
+			log.Printf("Skipping node %s - it's a primary", nodeName)
+			continue
+		}
+
+		// Check if this node has replication status
+		if state.PgStatWalReceiver == nil || state.PgStatWalReceiver.WrittenLsn == nil {
+			log.Printf("Skipping node %s - no replication status", nodeName)
+			continue
+		}
+
+		lsn, err := parseLSN(*state.PgStatWalReceiver.WrittenLsn)
+		if err != nil {
+			log.Printf("Skipping node %s - failed to parse LSN: %v", nodeName, err)
+			continue
+		}
+
+		if lsn > bestLSN {
+			bestLSN = lsn
+			bestNode = nodeName
+		}
+	}
+
+	if bestNode == "" {
+		return "", fmt.Errorf("no suitable replica found for promotion")
+	}
+
+	log.Printf("Selected %s as best replica (LSN: %s)", bestNode, *replicas[bestNode].PgStatWalReceiver.WrittenLsn)
+	return bestNode, nil
 }

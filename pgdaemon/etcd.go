@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -326,4 +327,37 @@ func (etcd *EtcdBackend) FetchCurrentNodeDesiredState(ctx context.Context) (*Nod
 	}
 
 	return &state, nil
+}
+
+func (etcd *EtcdBackend) FetchAllNodeObservedStates(ctx context.Context) (map[string]*NodeObservedState, error) {
+	prefix := etcd.clusterPrefix() + "/nodes/"
+	resp, err := etcd.client.Get(ctx, prefix, clientv3.WithPrefix())
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch node observed states: %w", err)
+	}
+
+	states := make(map[string]*NodeObservedState)
+	for _, kv := range resp.Kvs {
+		key := string(kv.Key)
+		if !strings.HasSuffix(key, "/observed-state") {
+			continue
+		}
+
+		// Extract node name from key like "/cluster/nodes/pg0/observed-state"
+		parts := strings.Split(key, "/")
+		if len(parts) < 4 {
+			continue
+		}
+		nodeName := parts[len(parts)-2]
+
+		var state NodeObservedState
+		if err := json.Unmarshal(kv.Value, &state); err != nil {
+			log.Printf("Failed to unmarshal observed state for node %s: %v", nodeName, err)
+			continue
+		}
+
+		states[nodeName] = &state
+	}
+
+	return states, nil
 }

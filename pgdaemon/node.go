@@ -100,12 +100,40 @@ func performNodeTasks(ctx context.Context, store StateStore, conf config) error 
 
 	log.Printf("Node desired state for %s: %+v", conf.nodeName, desiredState)
 
+	// Check current PostgreSQL state
+	isPrimary, err := checkIsPrimary(conf.postgresHost, conf.postgresPort, conf.postgresUser, 500*time.Millisecond)
+	if err != nil {
+		log.Printf("Failed to check if node is primary (postgres might be down): %v", err)
+		isPrimary = false
+	}
+
 	if desiredState.PrimaryName == conf.nodeName {
-		err = configureAsPrimary()
-		if err != nil {
-			return fmt.Errorf("Failed to configure as primary: %w", err)
+		// This node should be the primary
+		if !isPrimary {
+			// We need to promote this replica to primary
+			log.Printf("Node %s needs to be promoted to primary", conf.nodeName)
+			err = promoteReplica(conf.postgresHost, conf.postgresPort, conf.postgresUser)
+			if err != nil {
+				return fmt.Errorf("Failed to promote replica to primary: %w", err)
+			}
+		} else {
+			// Already primary, ensure configuration is correct
+			err = configureAsPrimary()
+			if err != nil {
+				return fmt.Errorf("Failed to configure as primary: %w", err)
+			}
 		}
 	} else {
+		// This node should be a replica
+		if isPrimary {
+			// We need to demote this primary and reconfigure as replica
+			log.Printf("Node %s needs to be demoted from primary to replica", conf.nodeName)
+			err = stopPostgres()
+			if err != nil {
+				return fmt.Errorf("Failed to stop postgres for demotion: %w", err)
+			}
+		}
+
 		err = configureAsReplica(desiredState.PrimaryName, conf.postgresPort, conf.postgresUser)
 		if err != nil {
 			return fmt.Errorf("Failed to configure as replica: %w", err)

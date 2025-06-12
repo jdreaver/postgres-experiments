@@ -10,6 +10,7 @@ type StateStore interface {
 	FetchClusterDesiredState(ctx context.Context) (*ClusterDesiredState, error)
 
 	WriteCurrentNodeObservedState(ctx context.Context, state *NodeObservedState) error
+	FetchAllNodeObservedStates(ctx context.Context) (map[string]*NodeObservedState, error)
 
 	SetNodeDesiredState(ctx context.Context, nodeName string, state *NodeDesiredState) error
 	FetchCurrentNodeDesiredState(ctx context.Context) (*NodeDesiredState, error)
