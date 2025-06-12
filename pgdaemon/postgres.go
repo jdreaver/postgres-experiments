@@ -164,17 +164,20 @@ func configureAsReplica(primaryHost string, primaryPort int, user string) error 
 }
 
 func updateReplicaConfiguration(primaryHost string, primaryPort int) error {
+	// TODO: Use `ALTER SYSTEM SET` to change primary_conninfo
+	// instead of editing this file.
+
 	// Update postgresql.auto.conf to point to new primary
 	autoConfPath := pgDataDir + "/postgresql.auto.conf"
-	
+
 	primaryConnInfo := fmt.Sprintf("host=%s port=%d user=postgres", primaryHost, primaryPort)
-	
+
 	// Read existing auto.conf
 	content := ""
 	if data, err := os.ReadFile(autoConfPath); err == nil {
 		content = string(data)
 	}
-	
+
 	// Update or add primary_conninfo
 	lines := strings.Split(content, "\n")
 	found := false
@@ -185,17 +188,17 @@ func updateReplicaConfiguration(primaryHost string, primaryPort int) error {
 			break
 		}
 	}
-	
+
 	if !found {
 		lines = append(lines, fmt.Sprintf("primary_conninfo = '%s'", primaryConnInfo))
 	}
-	
+
 	// Write back to file
 	newContent := strings.Join(lines, "\n")
 	if err := os.WriteFile(autoConfPath, []byte(newContent), 0644); err != nil {
 		return fmt.Errorf("failed to update postgresql.auto.conf: %w", err)
 	}
-	
+
 	log.Printf("Updated replica configuration to connect to primary %s:%d", primaryHost, primaryPort)
 	return nil
 }
@@ -321,7 +324,7 @@ func stopPostgres() error {
 // promoteReplica promotes a replica to become the new primary
 func promoteReplica(host string, port int, user string) error {
 	log.Printf("Promoting replica at %s:%d to primary", host, port)
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

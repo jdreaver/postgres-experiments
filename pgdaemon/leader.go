@@ -51,7 +51,7 @@ func performLeaderTasks(ctx context.Context, store StateStore, conf config) erro
 	// Check if current primary is healthy
 	needsFailover := false
 	currentPrimary := clusterState.PrimaryName
-	
+
 	if primaryState, exists := observedStates[currentPrimary]; exists {
 		if primaryState.Error != nil {
 			log.Printf("Primary %s has error: %s - initiating failover", currentPrimary, *primaryState.Error)
@@ -74,7 +74,7 @@ func performLeaderTasks(ctx context.Context, store StateStore, conf config) erro
 		} else {
 			// Update cluster desired state with new primary
 			clusterState.PrimaryName = newPrimary
-			
+
 			// Move old primary to replica list if it's not already there
 			foundOldPrimary := false
 			for _, replica := range clusterState.ReplicaNames {
@@ -133,7 +133,7 @@ func performFailover(ctx context.Context, store StateStore, clusterState *Cluste
 	}
 
 	log.Printf("Selected %s as new primary", bestReplica)
-	
+
 	// Wait for replicas to catch up to the best replica's LSN
 	if err := waitForReplicaCatchup(ctx, store, bestReplica, observedStates, catchupTimeout); err != nil {
 		log.Printf("Replica catch-up failed or timed out: %v", err)

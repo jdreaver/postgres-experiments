@@ -82,8 +82,12 @@ func (etcd *EtcdBackend) clusterDesiredStatePrefix() string {
 	return etcd.clusterPrefix() + "/desired-state"
 }
 
+func (etcd *EtcdBackend) nodesPrefix() string {
+	return etcd.clusterPrefix() + "/nodes"
+}
+
 func (etcd *EtcdBackend) nodePrefix(nodeName string) string {
-	return etcd.clusterPrefix() + "/nodes/" + nodeName
+	return etcd.nodesPrefix() + nodeName
 }
 
 func (etcd *EtcdBackend) nodeDesiredStatePrefix(nodeName string) string {
@@ -330,8 +334,7 @@ func (etcd *EtcdBackend) FetchCurrentNodeDesiredState(ctx context.Context) (*Nod
 }
 
 func (etcd *EtcdBackend) FetchAllNodeObservedStates(ctx context.Context) (map[string]*NodeObservedState, error) {
-	prefix := etcd.clusterPrefix() + "/nodes/"
-	resp, err := etcd.client.Get(ctx, prefix, clientv3.WithPrefix())
+	resp, err := etcd.client.Get(ctx, etcd.nodesPrefix(), clientv3.WithPrefix())
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch node observed states: %w", err)
 	}
