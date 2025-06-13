@@ -80,7 +80,7 @@ func evaluateElection(prevLease *observedLease, lease *lease, nodeName string, n
 	// also means refreshing the lease).
 	if prevLease.lease.leader == nodeName {
 		result.shouldRunElection = true
-		result.comment = "We are the current lease holder, running for election"
+		result.comment = "We are the current lease holder, refreshing lease"
 		return result
 	}
 

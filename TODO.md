@@ -3,10 +3,10 @@
 Document what I've done so far. Maybe with some nice ASCII art.
 
 Pure logic (both for election and for state):
+- Invert leader election so etcd matches an interface for a leader election backend, and the leader election logic uses etcd (currently etcd uses the leader election logic)
+- Add a ton of tests on this logic
 - Store previous spec/status and current spec/status, as well as time diff between them.
 - Using prev/current state, spit out actions to take
-- Add a ton of tests on this logic
-- Invert leader election so etcd matches an interface for a leader election backend, and the leader election logic uses etcd (currently etcd uses the leader election logic)
 
 Failover:
 - Plan and refactors:
@@ -26,8 +26,9 @@ Failover:
   - Then primary is stopped and the replica that is most up to date is selected as new primary
   - New primary will stop replication
   - Replicas will point to new primary
-
 - Automated failover based on health signals
+
+TLA+ or Quint to model out leader election in isolation and leader election + failover
 
 Run MongoDB locally too.
 - Get benchmark MongoDB data set and get it replicated into postgres so we can compare apples to apples

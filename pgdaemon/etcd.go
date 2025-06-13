@@ -54,13 +54,13 @@ func (etcd *EtcdBackend) nodeStatusPrefix(nodeName string) string {
 }
 
 func (etcd *EtcdBackend) RunElection(ctx context.Context) error {
-	lease, err := etcd.fetchLease(ctx)
+	currLease, err := etcd.fetchLease(ctx)
 	if err != nil {
 		etcd.lastObservedLease = nil
 		return fmt.Errorf("failed to fetch lease: %w", err)
 	}
 
-	result := evaluateElection(etcd.lastObservedLease, lease, etcd.nodeName, time.Now())
+	result := evaluateElection(etcd.lastObservedLease, currLease, etcd.nodeName, time.Now())
 	etcd.lastObservedLease = result.lease
 	if result.lease != nil {
 		log.Printf(
@@ -76,35 +76,52 @@ func (etcd *EtcdBackend) RunElection(ctx context.Context) error {
 	}
 
 	if result.shouldRunElection {
-		newRVN := uuid.New()
+		newLease := lease{
+			leader:                etcd.nodeName,
+			revisionVersionNumber: uuid.New(),
+			duration:              etcd.leaseDuration,
+		}
 
-		// By default, assume previous lease doesn't exist
-		compare := clientv3.Compare(clientv3.CreateRevision(etcd.electionPrefix()+etcdRvnKey), "=", 0)
+		var prevRVN *uuid.UUID
 		if etcd.lastObservedLease != nil {
-			lastRVN := etcd.lastObservedLease.lease.revisionVersionNumber
-			compare = clientv3.Compare(clientv3.Value(etcd.electionPrefix()+etcdRvnKey), "=", lastRVN.String())
+			prevRVN = &etcd.lastObservedLease.lease.revisionVersionNumber
 		}
 
-		txn := etcd.client.Txn(ctx)
-		txnResp, err := txn.If(
-			compare,
-		).Then(
-			clientv3.OpPut(etcd.electionPrefix()+etcdRvnKey, newRVN.String()),
-			clientv3.OpPut(etcd.electionPrefix()+etcdLeaderKey, etcd.nodeName),
-			clientv3.OpPut(etcd.electionPrefix()+etcdDurationMsKey, fmt.Sprintf("%d", etcd.leaseDuration.Milliseconds())),
-		).Commit()
+		wonElection, err := etcd.atomicCompareAndSwapLease(ctx, prevRVN, newLease)
 		if err != nil {
-			return fmt.Errorf("failed to commit transaction: %w", err)
+			return fmt.Errorf("failed to run etcd election: %w", err)
 		}
 
-		if txnResp.Succeeded {
-			log.Printf("We are the leader. New RVN: %s", newRVN)
+		if wonElection {
+			log.Printf("We are the leader")
 		} else {
 			log.Printf("Lost CAS race to become leader")
 		}
 	}
 
 	return nil
+}
+
+func (etcd *EtcdBackend) atomicCompareAndSwapLease(ctx context.Context, prevRVN *uuid.UUID, newLease lease) (bool, error) {
+	compare := clientv3.Compare(clientv3.CreateRevision(etcd.electionPrefix()+etcdRvnKey), "=", 0)
+	if prevRVN != nil {
+		lastRVN := *prevRVN
+		compare = clientv3.Compare(clientv3.Value(etcd.electionPrefix()+etcdRvnKey), "=", lastRVN.String())
+	}
+
+	txn := etcd.client.Txn(ctx)
+	txnResp, err := txn.If(
+		compare,
+	).Then(
+		clientv3.OpPut(etcd.electionPrefix()+etcdRvnKey, newLease.revisionVersionNumber.String()),
+		clientv3.OpPut(etcd.electionPrefix()+etcdLeaderKey, newLease.leader),
+		clientv3.OpPut(etcd.electionPrefix()+etcdDurationMsKey, fmt.Sprintf("%d", newLease.duration.Milliseconds())),
+	).Commit()
+	if err != nil {
+		return false, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return txnResp.Succeeded, nil
 }
 
 func (etcd *EtcdBackend) fetchLease(ctx context.Context) (*lease, error) {
