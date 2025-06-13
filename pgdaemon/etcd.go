@@ -77,20 +77,20 @@ func (etcd *EtcdBackend) electionPrefix() string {
 	return etcd.clusterPrefix() + "/election"
 }
 
-func (etcd *EtcdBackend) clusterDesiredStatePrefix() string {
-	return etcd.clusterPrefix() + "/desired-state"
+func (etcd *EtcdBackend) clusterSpecPrefix() string {
+	return etcd.clusterPrefix() + "/spec"
 }
 
 func (etcd *EtcdBackend) nodePrefix(nodeName string) string {
 	return etcd.clusterPrefix() + "/nodes/" + nodeName
 }
 
-func (etcd *EtcdBackend) nodeDesiredStatePrefix(nodeName string) string {
-	return etcd.nodePrefix(nodeName) + "/desired-state"
+func (etcd *EtcdBackend) nodeSpecPrefix(nodeName string) string {
+	return etcd.nodePrefix(nodeName) + "/spec"
 }
 
-func (etcd *EtcdBackend) nodeObservedStatePrefix(nodeName string) string {
-	return etcd.nodePrefix(nodeName) + "/observed-state"
+func (etcd *EtcdBackend) nodeStatusPrefix(nodeName string) string {
+	return etcd.nodePrefix(nodeName) + "/status"
 }
 
 func (etcd *EtcdBackend) RunElection(ctx context.Context) error {
@@ -236,94 +236,89 @@ func (e *EtcdBackend) IsLeader() bool {
 	return true
 }
 
-func (etcd *EtcdBackend) WriteCurrentNodeObservedState(ctx context.Context, state *NodeObservedState) error {
-	stateBytes, err := json.Marshal(state)
+func (etcd *EtcdBackend) WriteCurrentNodeStatus(ctx context.Context, status *NodeStatus) error {
+	statusBytes, err := json.Marshal(status)
 	if err != nil {
-		return fmt.Errorf("failed to marshal node state: %w", err)
+		return fmt.Errorf("failed to marshal node status: %w", err)
 	}
 
-	if _, err := etcd.client.Put(ctx, etcd.nodeObservedStatePrefix(etcd.nodeName), string(stateBytes)); err != nil {
-		return fmt.Errorf("failed to write node state to etcd: %w", err)
+	if _, err := etcd.client.Put(ctx, etcd.nodeStatusPrefix(etcd.nodeName), string(statusBytes)); err != nil {
+		return fmt.Errorf("failed to write node status to etcd: %w", err)
 	}
 
 	return nil
 }
 
-type ClusterDesiredState struct {
-	PrimaryName  string   `json:"primary_name"`
-	ReplicaNames []string `json:"replica_names"`
-}
-
-func (etcd *EtcdBackend) InitializeCluster(ctx context.Context, state *ClusterDesiredState) error {
-	if state.PrimaryName == "" {
+func (etcd *EtcdBackend) InitializeCluster(ctx context.Context, spec *ClusterSpec) error {
+	if spec.PrimaryName == "" {
 		return fmt.Errorf("primary name cannot be empty")
 	}
 
-	stateBytes, err := json.Marshal(state)
+	specBytes, err := json.Marshal(spec)
 	if err != nil {
-		return fmt.Errorf("failed to marshal cluster desired state: %w", err)
+		return fmt.Errorf("failed to marshal cluster spec: %w", err)
 	}
 
-	_, err = etcd.client.Put(ctx, etcd.clusterDesiredStatePrefix(), string(stateBytes))
+	_, err = etcd.client.Put(ctx, etcd.clusterSpecPrefix(), string(specBytes))
 	if err != nil {
-		return fmt.Errorf("failed to write cluster desired state to etcd: %w", err)
+		return fmt.Errorf("failed to write cluster spec to etcd: %w", err)
 	}
 
-	log.Printf("Cluster desired state initialized: %s", string(stateBytes))
+	log.Printf("Cluster spec initialized: %s", string(specBytes))
 
 	return nil
 }
 
-func (etcd *EtcdBackend) FetchClusterDesiredState(ctx context.Context) (*ClusterDesiredState, error) {
-	resp, err := etcd.client.Get(ctx, etcd.clusterDesiredStatePrefix())
+func (etcd *EtcdBackend) FetchClusterSpec(ctx context.Context) (*ClusterSpec, error) {
+	resp, err := etcd.client.Get(ctx, etcd.clusterSpecPrefix())
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch cluster desired state: %w", err)
+		return nil, fmt.Errorf("failed to fetch cluster spec: %w", err)
 	}
 
 	if len(resp.Kvs) == 0 {
-		return nil, fmt.Errorf("cluster desired state not found")
+		return nil, fmt.Errorf("cluster spec not found")
 	}
 
-	var state ClusterDesiredState
-	if err := json.Unmarshal(resp.Kvs[0].Value, &state); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal cluster desired state: %w", err)
+	var spec ClusterSpec
+	if err := json.Unmarshal(resp.Kvs[0].Value, &spec); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal cluster spec: %w", err)
 	}
 
-	return &state, nil
+	return &spec, nil
 }
 
-type NodeDesiredState struct {
+type NodeSpec struct {
 	PrimaryName string `json:"primary_name"`
 }
 
-func (etcd *EtcdBackend) SetNodeDesiredState(ctx context.Context, nodeName string, state *NodeDesiredState) error {
-	stateBytes, err := json.Marshal(state)
+func (etcd *EtcdBackend) SetNodeSpec(ctx context.Context, nodeName string, spec *NodeSpec) error {
+	specBytes, err := json.Marshal(spec)
 	if err != nil {
-		return fmt.Errorf("failed to marshal node desired state: %w", err)
+		return fmt.Errorf("failed to marshal node spec: %w", err)
 	}
 
-	if _, err := etcd.client.Put(ctx, etcd.nodeDesiredStatePrefix(nodeName), string(stateBytes)); err != nil {
-		return fmt.Errorf("failed to write node desired state to etcd: %w", err)
+	if _, err := etcd.client.Put(ctx, etcd.nodeSpecPrefix(nodeName), string(specBytes)); err != nil {
+		return fmt.Errorf("failed to write node spec to etcd: %w", err)
 	}
 
 	return nil
 }
 
-func (etcd *EtcdBackend) FetchCurrentNodeDesiredState(ctx context.Context) (*NodeDesiredState, error) {
-	prefix := etcd.nodeDesiredStatePrefix(etcd.nodeName)
+func (etcd *EtcdBackend) FetchCurrentNodeSpec(ctx context.Context) (*NodeSpec, error) {
+	prefix := etcd.nodeSpecPrefix(etcd.nodeName)
 	resp, err := etcd.client.Get(ctx, prefix)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch node desired state at %s: %w", prefix, err)
+		return nil, fmt.Errorf("failed to fetch node spec at %s: %w", prefix, err)
 	}
 
 	if len(resp.Kvs) == 0 {
-		return nil, fmt.Errorf("node desired state not found, no values under %s", prefix)
+		return nil, fmt.Errorf("node spec not found, no values under %s", prefix)
 	}
 
-	var state NodeDesiredState
-	if err := json.Unmarshal(resp.Kvs[0].Value, &state); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal node desired state: %w", err)
+	var spec NodeSpec
+	if err := json.Unmarshal(resp.Kvs[0].Value, &spec); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal node spec: %w", err)
 	}
 
-	return &state, nil
+	return &spec, nil
 }

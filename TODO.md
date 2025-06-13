@@ -4,6 +4,7 @@ Document what I've done so far. Maybe with some nice ASCII art.
 
 Failover:
 - Plan and refactors:
+  - Have nodes just read from cluster desired state. Put it all in a JSON blob. (No need for strict separation. Just causes extra IO.)
   - Add a "cluster state", not just desired state. Put under `/cluster/observed-state` and move desired state under `/cluster/desired-state`
   - Dirty failover: very simple. Just do `pg_promote(wait => true)` or `ALTER SYSTEM SET primary_conninfo = '...'` + `SELECT pg_reload_conf();`
   - State machine with state

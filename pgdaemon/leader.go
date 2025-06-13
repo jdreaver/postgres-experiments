@@ -35,23 +35,23 @@ func leaderReconcilerLoop(ctx context.Context, store StateStore) error {
 }
 
 func performLeaderTasks(ctx context.Context, store StateStore) error {
-	clusterState, err := store.FetchClusterDesiredState(ctx)
+	clusterSpec, err := store.FetchClusterSpec(ctx)
 	if err != nil {
-		return fmt.Errorf("Failed to fetch cluster desired state: %w", err)
+		return fmt.Errorf("Failed to fetch cluster spec: %w", err)
 	}
 
-	log.Printf("Cluster desired state: %+v", clusterState)
-	nodeDesiredState := NodeDesiredState{
-		PrimaryName: clusterState.PrimaryName,
+	log.Printf("Cluster spec: %+v", clusterSpec)
+	nodeSpec := NodeSpec{
+		PrimaryName: clusterSpec.PrimaryName,
 	}
 
-	if err := store.SetNodeDesiredState(ctx, clusterState.PrimaryName, &nodeDesiredState); err != nil {
-		return fmt.Errorf("Failed to set primary desired state: %w", err)
+	if err := store.SetNodeSpec(ctx, clusterSpec.PrimaryName, &nodeSpec); err != nil {
+		return fmt.Errorf("Failed to set primary spec: %w", err)
 	}
 
-	for _, replica := range clusterState.ReplicaNames {
-		if err := store.SetNodeDesiredState(ctx, replica, &nodeDesiredState); err != nil {
-			return fmt.Errorf("Failed to set node desired state for replica %s: %w", replica, err)
+	for _, replica := range clusterSpec.ReplicaNames {
+		if err := store.SetNodeSpec(ctx, replica, &nodeSpec); err != nil {
+			return fmt.Errorf("Failed to set node spec for replica %s: %w", replica, err)
 		}
 	}
 

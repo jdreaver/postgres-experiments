@@ -47,12 +47,12 @@ func main() {
 }
 
 func initCluster(ctx context.Context, store StateStore, conf config) {
-	state := ClusterDesiredState{
+	spec := ClusterSpec{
 		PrimaryName:  conf.primaryName,
 		ReplicaNames: conf.replicaNames,
 	}
 
-	err := store.InitializeCluster(ctx, &state)
+	err := store.InitializeCluster(ctx, &spec)
 	if err != nil {
 		log.Fatalf("Failed to initialize cluster: %v", err)
 	}

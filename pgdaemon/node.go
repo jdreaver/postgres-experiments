@@ -7,32 +7,8 @@ import (
 	"time"
 )
 
-type NodeObservedState struct {
-	Error             *string                `json:"error,omitempty"`
-	NodeTime          *string                `json:"node_time,omitempty"`
-	IsPrimary         *bool                  `json:"is_primary,omitempty"`
-	Replicas          []NodeReplicas         `json:"replicas,omitempty"`
-	PgStatWalReceiver *NodeReplicationStatus `json:"replication_status,omitempty"`
-}
-
-type NodeReplicas struct {
-	Hostname  string  `json:"hostname"`
-	State     string  `json:"state"`
-	WriteLsn  string  `json:"write_lsn"`
-	WriteLag  *string `json:"write_lag"`
-	SyncState string  `json:"sync_state"`
-	ReplyTime string  `json:"reply_time"`
-}
-
-type NodeReplicationStatus struct {
-	PrimaryHost string  `json:"primary_host"`
-	Status      string  `json:"status"`
-	WrittenLsn  *string `json:"written_lsn"`
-}
-
-// nodeReconcilerLoop runs the node reconciler, which fetches the
-// desired and observed state of the current node and performs tasks
-// to reconcile that state.
+// nodeReconcilerLoop runs the node reconciler, which fetches the spec
+// and status of the current node and performs tasks to reconcile them.
 func nodeReconcilerLoop(ctx context.Context, store StateStore, conf config) error {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -42,8 +18,8 @@ func nodeReconcilerLoop(ctx context.Context, store StateStore, conf config) erro
 		case <-ctx.Done():
 			return fmt.Errorf("returning ctx.Done() error in node reconciler loop: %w", ctx.Err())
 		case <-ticker.C:
-			if err := storeObservedState(ctx, store, conf); err != nil {
-				log.Printf("Failed to store observed state: %v", err)
+			if err := storeNodeStatus(ctx, store, conf); err != nil {
+				log.Printf("Failed to store node status: %v", err)
 			}
 
 			if err := performNodeTasks(ctx, store, conf); err != nil {
@@ -53,18 +29,18 @@ func nodeReconcilerLoop(ctx context.Context, store StateStore, conf config) erro
 	}
 }
 
-func storeObservedState(ctx context.Context, store StateStore, conf config) error {
-	var state NodeObservedState
+func storeNodeStatus(ctx context.Context, store StateStore, conf config) error {
+	var status NodeStatus
 	pgState, err := fetchPostgresNodeState(conf.postgresHost, conf.postgresPort, conf.postgresUser, 500*time.Millisecond)
 	if err != nil {
 		log.Printf("Failed to fetch Postgres node state: %v", err)
 		errStr := err.Error()
-		state.Error = &errStr
+		status.Error = &errStr
 	} else {
-		state.NodeTime = pgState.NodeTime
-		state.IsPrimary = pgState.IsPrimary
+		status.NodeTime = pgState.NodeTime
+		status.IsPrimary = pgState.IsPrimary
 		for _, replica := range pgState.PgStatReplicas {
-			state.Replicas = append(state.Replicas, NodeReplicas{
+			status.Replicas = append(status.Replicas, NodeReplicas{
 				Hostname:  replica.ClientHostname,
 				State:     replica.State,
 				WriteLsn:  replica.WriteLsn,
@@ -74,7 +50,7 @@ func storeObservedState(ctx context.Context, store StateStore, conf config) erro
 			})
 		}
 		if pgState.PgStatWalReceiver != nil {
-			state.PgStatWalReceiver = &NodeReplicationStatus{
+			status.ReplicationStatus = &NodeReplicationStatus{
 				PrimaryHost: pgState.PgStatWalReceiver.SenderHost,
 				Status:      pgState.PgStatWalReceiver.Status,
 				WrittenLsn:  pgState.PgStatWalReceiver.WrittenLsn,
@@ -83,7 +59,7 @@ func storeObservedState(ctx context.Context, store StateStore, conf config) erro
 	}
 
 	wCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
-	err = store.WriteCurrentNodeObservedState(wCtx, &state)
+	err = store.WriteCurrentNodeStatus(wCtx, &status)
 	cancel()
 	if err != nil {
 		return fmt.Errorf("failed to write node state to store: %w", err)
@@ -93,20 +69,20 @@ func storeObservedState(ctx context.Context, store StateStore, conf config) erro
 }
 
 func performNodeTasks(ctx context.Context, store StateStore, conf config) error {
-	desiredState, err := store.FetchCurrentNodeDesiredState(ctx)
+	spec, err := store.FetchCurrentNodeSpec(ctx)
 	if err != nil {
-		return fmt.Errorf("Failed to fetch node desired state: %w", err)
+		return fmt.Errorf("Failed to fetch node spec: %w", err)
 	}
 
-	log.Printf("Node desired state for %s: %+v", conf.nodeName, desiredState)
+	log.Printf("Node spec for %s: %+v", conf.nodeName, spec)
 
-	if desiredState.PrimaryName == conf.nodeName {
+	if spec.PrimaryName == conf.nodeName {
 		err = configureAsPrimary()
 		if err != nil {
 			return fmt.Errorf("Failed to configure as primary: %w", err)
 		}
 	} else {
-		err = configureAsReplica(desiredState.PrimaryName, conf.postgresPort, conf.postgresUser)
+		err = configureAsReplica(spec.PrimaryName, conf.postgresPort, conf.postgresUser)
 		if err != nil {
 			return fmt.Errorf("Failed to configure as replica: %w", err)
 		}
