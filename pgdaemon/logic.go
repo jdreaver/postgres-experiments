@@ -15,8 +15,8 @@ type ClusterStatus struct {
 // NodeDesiredState defines the desired state for a node.
 type NodeStatus struct {
 	Error             *string                `json:"error,omitempty"`
-	NodeTime          *string                `json:"node_time,omitempty"`
-	IsPrimary         *bool                  `json:"is_primary,omitempty"`
+	NodeTime          string                 `json:"node_time"`
+	IsPrimary         bool                   `json:"is_primary"`
 	Replicas          []NodeReplicas         `json:"replicas,omitempty"`
 	ReplicationStatus *NodeReplicationStatus `json:"replication_status,omitempty"`
 }

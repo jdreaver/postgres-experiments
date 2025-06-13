@@ -24,8 +24,8 @@ func connectPostgres(ctx context.Context, host string, port int, user string) (*
 }
 
 type PostgresNodeState struct {
-	NodeTime          *string
-	IsPrimary         *bool
+	NodeTime          string
+	IsPrimary         bool
 	PgStatReplicas    []PostgresPgStatReplica
 	PgStatWalReceiver *PgStatWalReceiver
 }
@@ -70,7 +70,7 @@ func fetchPostgresNodeState(host string, port int, user string, connTimeout time
 		return nil, fmt.Errorf("check pg_is_in_recovery: %w", err)
 	}
 
-	if *state.IsPrimary {
+	if state.IsPrimary {
 		rows, err := conn.Query(ctx, `
 			SELECT client_hostname, client_addr, client_port, state, sent_lsn,
 			       write_lsn, flush_lsn, replay_lsn, write_lag, flush_lag,
