@@ -1,6 +1,15 @@
-MACHINES =  pg0 pg1 pg2
+MACHINES =
 MACHINES += etcd0
 MACHINES += haproxy0
+
+POSTGRES_MACHINES = pg0 pg1 pg2
+MACHINES += $(POSTGRES_MACHINES)
+
+ETCD_MACHINES = etcd0
+MACHINES += $(ETCD_MACHINES)
+
+HAPROXY_MACHINES = haproxy0
+MACHINES += $(HAPROXY_MACHINES)
 
 MONGO_MACHINES = mongo0 mongo1 mongo2
 MACHINES += $(MONGO_MACHINES)
@@ -11,11 +20,11 @@ RUN=./run.sh
 %: export TARGET=$@
 
 .PHONY: all
-all: network $(MACHINES) init_cluster init_replset imdb pgbench
+all: machines imdb pgbench
 
 .DEFAULT_GOAL := machines
 .PHONY: machines
-machines: $(MACHINES) init_cluster init_replset
+machines: network $(MACHINES) pg_cluster init_replset
 
 .PHONY: network
 network:
@@ -32,8 +41,11 @@ $(MACHINES): network pgbase
 	$(RUN) sudo machinectl start $@
 
 .PHONY: init_cluster
-init_cluster: etcd0
+init_cluster: $(ETCD_MACHINES)
 	$(RUN) initialize_cluster_state
+
+.PHONY: pg_cluster
+pg_cluster: init_cluster $(POSTGRES_MACHINES) $(ETCD_MACHINES) $(HAPROXY_MACHINES)
 
 .PHONY: init_replset
 init_replset: $(MONGO_MACHINES)
