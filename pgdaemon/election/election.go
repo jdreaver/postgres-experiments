@@ -17,11 +17,15 @@ type Election struct {
 	lastObservedLease *observedLease
 }
 
-func New(nodeName string, leaseDuration time.Duration) *Election {
+func New(nodeName string, leaseDuration time.Duration) (*Election, error) {
+	if leaseDuration <= 0 {
+		return nil, fmt.Errorf("lease duration must be greater than zero")
+	}
+
 	return &Election{
 		nodeName:      nodeName,
 		leaseDuration: leaseDuration,
-	}
+	}, nil
 }
 
 // ElectionBackend is a data store (usually a connection to one) that

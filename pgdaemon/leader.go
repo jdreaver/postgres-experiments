@@ -11,7 +11,10 @@ import (
 
 // leaderReconcilerLoop runs the leader election and performs leader tasks.
 func leaderReconcilerLoop(ctx context.Context, store StateStore, conf config) error {
-	election := election.New(conf.nodeName, conf.leaseDuration)
+	election, err := election.New(conf.nodeName, conf.leaseDuration)
+	if err != nil {
+		return fmt.Errorf("failed to create election: %w", err)
+	}
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
