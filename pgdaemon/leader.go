@@ -8,7 +8,9 @@ import (
 )
 
 // leaderReconcilerLoop runs the leader election and performs leader tasks.
-func leaderReconcilerLoop(ctx context.Context, store StateStore) error {
+func leaderReconcilerLoop(ctx context.Context, store StateStore, conf config) error {
+	election := NewElection(conf.nodeName, conf.leaseDuration)
+
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -18,13 +20,13 @@ func leaderReconcilerLoop(ctx context.Context, store StateStore) error {
 			return fmt.Errorf("returning ctx.Done() error in leader loop: %w", ctx.Err())
 		case <-ticker.C:
 			eCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			err := store.RunElection(eCtx)
+			err := election.Run(eCtx, store)
 			cancel()
 			if err != nil {
 				log.Printf("Election error: %v", err)
 			}
 
-			if store.IsLeader() {
+			if election.IsLeader() {
 				if err := performLeaderTasks(ctx, store); err != nil {
 					log.Printf("Failed to perform leader tasks: %v", err)
 				}

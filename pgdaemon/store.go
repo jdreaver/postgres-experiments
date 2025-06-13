@@ -3,8 +3,7 @@ package main
 import "context"
 
 type StateStore interface {
-	RunElection(ctx context.Context) error
-	IsLeader() bool
+	ElectionBackend
 
 	InitializeCluster(ctx context.Context, spec *ClusterSpec) error
 	FetchClusterSpec(ctx context.Context) (*ClusterSpec, error)

@@ -12,28 +12,20 @@ import (
 )
 
 type EtcdBackend struct {
+	client      *clientv3.Client
 	clusterName string
-
-	// nodeName is the name of this node in the election (usually
-	// the hostname).
-	nodeName string
-
-	client            *clientv3.Client
-	leaseDuration     time.Duration
-	lastObservedLease *observedLease
+	nodeName    string
 }
 
 const etcdRvnKey = "/rvn"
 const etcdLeaderKey = "/leader"
 const etcdDurationMsKey = "/lease_duration_ms"
 
-// TODO: Too many string arguments
-func NewEtcdBackend(client *clientv3.Client, clusterName string, nodeName string, leaseDuration time.Duration) (*EtcdBackend, error) {
+func NewEtcdBackend(client *clientv3.Client, clusterName string, nodeName string) (*EtcdBackend, error) {
 	return &EtcdBackend{
-		clusterName:   clusterName,
-		client:        client,
-		nodeName:      nodeName,
-		leaseDuration: leaseDuration,
+		clusterName: clusterName,
+		client:      client,
+		nodeName:    nodeName,
 	}, nil
 }
 
@@ -53,56 +45,7 @@ func (etcd *EtcdBackend) nodeStatusPrefix(nodeName string) string {
 	return etcd.clusterPrefix() + "/node-statuses/" + nodeName
 }
 
-func (etcd *EtcdBackend) RunElection(ctx context.Context) error {
-	currLease, err := etcd.fetchLease(ctx)
-	if err != nil {
-		etcd.lastObservedLease = nil
-		return fmt.Errorf("failed to fetch lease: %w", err)
-	}
-
-	result := evaluateElection(etcd.lastObservedLease, currLease, etcd.nodeName, time.Now())
-	etcd.lastObservedLease = result.lease
-	if result.lease != nil {
-		log.Printf(
-			"Lease: leader: %s, rvn: %s, duration: %s, time left: %s",
-			result.lease.lease.leader,
-			result.lease.lease.revisionVersionNumber,
-			result.lease.lease.duration,
-			result.lease.timeLeft,
-		)
-	}
-	if result.comment != "" {
-		log.Printf("Election evaluation: %s", result.comment)
-	}
-
-	if result.shouldRunElection {
-		newLease := lease{
-			leader:                etcd.nodeName,
-			revisionVersionNumber: uuid.New(),
-			duration:              etcd.leaseDuration,
-		}
-
-		var prevRVN *uuid.UUID
-		if etcd.lastObservedLease != nil {
-			prevRVN = &etcd.lastObservedLease.lease.revisionVersionNumber
-		}
-
-		wonElection, err := etcd.atomicCompareAndSwapLease(ctx, prevRVN, newLease)
-		if err != nil {
-			return fmt.Errorf("failed to run etcd election: %w", err)
-		}
-
-		if wonElection {
-			log.Printf("We are the leader")
-		} else {
-			log.Printf("Lost CAS race to become leader")
-		}
-	}
-
-	return nil
-}
-
-func (etcd *EtcdBackend) atomicCompareAndSwapLease(ctx context.Context, prevRVN *uuid.UUID, newLease lease) (bool, error) {
+func (etcd *EtcdBackend) AtomicCompareAndSwapLease(ctx context.Context, prevRVN *uuid.UUID, newLease lease) (bool, error) {
 	compare := clientv3.Compare(clientv3.CreateRevision(etcd.electionPrefix()+etcdRvnKey), "=", 0)
 	if prevRVN != nil {
 		lastRVN := *prevRVN
@@ -124,7 +67,7 @@ func (etcd *EtcdBackend) atomicCompareAndSwapLease(ctx context.Context, prevRVN 
 	return txnResp.Succeeded, nil
 }
 
-func (etcd *EtcdBackend) fetchLease(ctx context.Context) (*lease, error) {
+func (etcd *EtcdBackend) FetchCurrentLease(ctx context.Context) (*lease, error) {
 	getResp, err := etcd.client.Get(ctx, etcd.electionPrefix(), clientv3.WithPrefix())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get election key from etcd: %w", err)
@@ -158,19 +101,6 @@ func (etcd *EtcdBackend) fetchLease(ctx context.Context) (*lease, error) {
 	}
 
 	return &lease, nil
-}
-
-func (e *EtcdBackend) IsLeader() bool {
-	if e.lastObservedLease == nil {
-		return false
-	}
-	if e.lastObservedLease.lease.leader != e.nodeName {
-		return false
-	}
-	if time.Since(e.lastObservedLease.seen) > e.lastObservedLease.lease.duration {
-		return false
-	}
-	return true
 }
 
 func (etcd *EtcdBackend) WriteCurrentNodeStatus(ctx context.Context, status *NodeStatus) error {

@@ -3,7 +3,6 @@
 Document what I've done so far. Maybe with some nice ASCII art.
 
 Pure logic (both for election and for state):
-- Invert leader election so etcd matches an interface for a leader election backend, and the leader election logic uses etcd (currently etcd uses the leader election logic)
 - Add a ton of tests on this logic
 - Store previous spec/status and current spec/status, as well as time diff between them.
 - Using prev/current state, spit out actions to take

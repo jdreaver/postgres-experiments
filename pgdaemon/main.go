@@ -29,7 +29,7 @@ func main() {
 	}
 	defer cli.Close()
 
-	store, err := NewEtcdBackend(cli, conf.clusterName, conf.nodeName, conf.leaseDuration)
+	store, err := NewEtcdBackend(cli, conf.clusterName, conf.nodeName)
 	if err != nil {
 		log.Fatalf("Failed to create election: %v", err)
 	}
@@ -62,7 +62,7 @@ func daemon(ctx context.Context, store StateStore, conf config) {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return leaderReconcilerLoop(ctx, store)
+		return leaderReconcilerLoop(ctx, store, conf)
 	})
 
 	g.Go(func() error {
