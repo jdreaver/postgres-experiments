@@ -33,13 +33,21 @@ type ElectionBackend interface {
 }
 
 func (e *Election) Run(ctx context.Context, backend ElectionBackend) error {
+	makeUuid := func() uuid.UUID {
+		return uuid.New()
+	}
+
+	return e.runInner(ctx, backend, time.Now(), makeUuid)
+}
+
+func (e *Election) runInner(ctx context.Context, backend ElectionBackend, now time.Time, makeUuid func() uuid.UUID) error {
 	currLease, err := backend.FetchCurrentLease(ctx)
 	if err != nil {
 		e.lastObservedLease = nil
 		return fmt.Errorf("failed to fetch lease: %w", err)
 	}
 
-	result := evaluateElection(e.lastObservedLease, currLease, e.nodeName, time.Now())
+	result := evaluateElection(e.lastObservedLease, currLease, e.nodeName, now)
 	e.lastObservedLease = result.lease
 	if result.lease != nil {
 		log.Printf(
@@ -57,7 +65,7 @@ func (e *Election) Run(ctx context.Context, backend ElectionBackend) error {
 	if result.shouldRunElection {
 		newLease := Lease{
 			Leader:                e.nodeName,
-			RevisionVersionNumber: uuid.New(),
+			RevisionVersionNumber: makeUuid(),
 			Duration:              e.leaseDuration,
 		}
 
