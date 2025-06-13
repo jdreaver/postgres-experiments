@@ -7,6 +7,10 @@ Pure logic (both for election and for state):
 - Store previous spec/status and current spec/status, as well as time diff between them.
 - Using prev/current state, spit out actions to take
 
+Testing:
+- Test `runInner` with mocked backend for leader election
+- Property tests that run "actions" sorted by time for leader election. Assert we have at most one leader at a time (no more than one node _thinks_ they are leader)
+
 Failover:
 - Plan and refactors:
   - Add a "cluster state", not just desired state. Put under `/cluster/observed-state` and move desired state under `/cluster/desired-state`

@@ -172,7 +172,7 @@ func evaluateElection(prevLease *observedLease, lease *Lease, nodeName string, n
 	}
 
 	if prevLease == nil {
-		result.comment = "No previous lease"
+		result.comment = "Seeing first lease, doing nothing"
 		return result
 	}
 
