@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"pgdaemon/election"
 )
 
 // leaderReconcilerLoop runs the leader election and performs leader tasks.
 func leaderReconcilerLoop(ctx context.Context, store StateStore, conf config) error {
-	election := NewElection(conf.nodeName, conf.leaseDuration)
+	election := election.New(conf.nodeName, conf.leaseDuration)
 
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()

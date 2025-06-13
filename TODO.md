@@ -3,7 +3,6 @@
 Document what I've done so far. Maybe with some nice ASCII art.
 
 Pure logic (both for election and for state):
-- Move `election` into its own package.
 - Add a ton of tests on this logic
 - Store previous spec/status and current spec/status, as well as time diff between them.
 - Using prev/current state, spit out actions to take

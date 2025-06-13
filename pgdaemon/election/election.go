@@ -1,4 +1,4 @@
-package main
+package election
 
 import (
 	"context"
@@ -17,7 +17,7 @@ type Election struct {
 	lastObservedLease *observedLease
 }
 
-func NewElection(nodeName string, leaseDuration time.Duration) *Election {
+func New(nodeName string, leaseDuration time.Duration) *Election {
 	return &Election{
 		nodeName:      nodeName,
 		leaseDuration: leaseDuration,
@@ -28,8 +28,8 @@ func NewElection(nodeName string, leaseDuration time.Duration) *Election {
 // supports the primitives necessary for leader election, principally
 // the ability to atomically compare-and-swap a lease.
 type ElectionBackend interface {
-	FetchCurrentLease(ctx context.Context) (*lease, error)
-	AtomicCompareAndSwapLease(ctx context.Context, prevRVN *uuid.UUID, newLease lease) (bool, error)
+	FetchCurrentLease(ctx context.Context) (*Lease, error)
+	AtomicCompareAndSwapLease(ctx context.Context, prevRVN *uuid.UUID, newLease Lease) (bool, error)
 }
 
 func (e *Election) Run(ctx context.Context, backend ElectionBackend) error {
@@ -44,9 +44,9 @@ func (e *Election) Run(ctx context.Context, backend ElectionBackend) error {
 	if result.lease != nil {
 		log.Printf(
 			"Lease: leader: %s, rvn: %s, duration: %s, time left: %s",
-			result.lease.lease.leader,
-			result.lease.lease.revisionVersionNumber,
-			result.lease.lease.duration,
+			result.lease.lease.Leader,
+			result.lease.lease.RevisionVersionNumber,
+			result.lease.lease.Duration,
 			result.lease.timeLeft,
 		)
 	}
@@ -55,15 +55,15 @@ func (e *Election) Run(ctx context.Context, backend ElectionBackend) error {
 	}
 
 	if result.shouldRunElection {
-		newLease := lease{
-			leader:                e.nodeName,
-			revisionVersionNumber: uuid.New(),
-			duration:              e.leaseDuration,
+		newLease := Lease{
+			Leader:                e.nodeName,
+			RevisionVersionNumber: uuid.New(),
+			Duration:              e.leaseDuration,
 		}
 
 		var prevRVN *uuid.UUID
 		if e.lastObservedLease != nil {
-			prevRVN = &e.lastObservedLease.lease.revisionVersionNumber
+			prevRVN = &e.lastObservedLease.lease.RevisionVersionNumber
 		}
 
 		wonElection, err := backend.AtomicCompareAndSwapLease(ctx, prevRVN, newLease)
@@ -85,35 +85,35 @@ func (e *Election) IsLeader() bool {
 	if e.lastObservedLease == nil {
 		return false
 	}
-	if e.lastObservedLease.lease.leader != e.nodeName {
+	if e.lastObservedLease.lease.Leader != e.nodeName {
 		return false
 	}
-	if time.Since(e.lastObservedLease.seen) > e.lastObservedLease.lease.duration {
+	if time.Since(e.lastObservedLease.seen) > e.lastObservedLease.lease.Duration {
 		return false
 	}
 	return true
 }
 
-// lease represents a time-bound lock held by the leader node. The
-// leader keeps the lease updated by refreshing it. Other nodes monitor
-// lease expiration by using local monotonic clocks. That means a lease
+// Lease represents a time-bound lock held by the leader node. The
+// leader keeps the Lease updated by refreshing it. Other nodes monitor
+// Lease expiration by using local monotonic clocks. That means a Lease
 // expires leaseDurationMilliseconds after a node first observes the
-// lease.
-type lease struct {
-	// leader is the name of the leader node that holds the lock.
-	leader string
+// Lease.
+type Lease struct {
+	// Leader is the name of the Leader node that holds the lock.
+	Leader string
 
-	// revisionVersionNumber (RVN) is a unique identifier that is
+	// RevisionVersionNumber (RVN) is a unique identifier that is
 	// updated every time the leader refreshes its lease.
-	revisionVersionNumber uuid.UUID
+	RevisionVersionNumber uuid.UUID
 
-	duration time.Duration
+	Duration time.Duration
 }
 
 // observedLease holds the latest lease information observed by a node,
 // along with the local node time it was seen.
 type observedLease struct {
-	lease lease
+	lease Lease
 
 	// N.B. Go's time.Now() includes a monotonic clock reading (see
 	// https://pkg.go.dev/time#hdr-Monotonic_Clocks).
@@ -138,7 +138,7 @@ type electionResult struct {
 	comment           string
 }
 
-func evaluateElection(prevLease *observedLease, lease *lease, nodeName string, now time.Time) electionResult {
+func evaluateElection(prevLease *observedLease, lease *Lease, nodeName string, now time.Time) electionResult {
 	// If lease is nil, it means there is no current leader and we
 	// should run for election.
 	if lease == nil {
@@ -155,7 +155,7 @@ func evaluateElection(prevLease *observedLease, lease *lease, nodeName string, n
 		lease: &observedLease{
 			lease:    *lease,
 			seen:     now,
-			timeLeft: lease.duration,
+			timeLeft: lease.Duration,
 		},
 	}
 
@@ -166,7 +166,7 @@ func evaluateElection(prevLease *observedLease, lease *lease, nodeName string, n
 
 	// If we are the lease holder, we should run for election (which
 	// also means refreshing the lease).
-	if prevLease.lease.leader == nodeName {
+	if prevLease.lease.Leader == nodeName {
 		result.shouldRunElection = true
 		result.comment = "We are the current lease holder, refreshing lease"
 		return result
@@ -174,7 +174,7 @@ func evaluateElection(prevLease *observedLease, lease *lease, nodeName string, n
 
 	// If the RVN is the same, update the time left. Otherwise note
 	// that the least is updated.
-	if prevLease.lease.revisionVersionNumber == lease.revisionVersionNumber {
+	if prevLease.lease.RevisionVersionNumber == lease.RevisionVersionNumber {
 		result.lease.timeLeft = prevLease.timeLeft - now.Sub(prevLease.seen)
 		result.comment = "No change in observed lease, updated time left"
 	} else {
@@ -186,7 +186,7 @@ func evaluateElection(prevLease *observedLease, lease *lease, nodeName string, n
 		result.shouldRunElection = true
 
 		// Warn if our own lease is the one that expired
-		if result.lease.lease.leader == nodeName {
+		if result.lease.lease.Leader == nodeName {
 			result.comment = "WARNING: Our own lease expired, running for election"
 		} else {
 			result.comment = "Previous lease expired, running for election"

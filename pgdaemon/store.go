@@ -1,9 +1,13 @@
 package main
 
-import "context"
+import (
+	"context"
+
+	"pgdaemon/election"
+)
 
 type StateStore interface {
-	ElectionBackend
+	election.ElectionBackend
 
 	InitializeCluster(ctx context.Context, spec *ClusterSpec) error
 	FetchClusterSpec(ctx context.Context) (*ClusterSpec, error)
