@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"slices"
 	"time"
 )
 
@@ -81,11 +82,12 @@ func performNodeTasks(ctx context.Context, store StateStore, conf config) error 
 		if err != nil {
 			return fmt.Errorf("Failed to configure as primary: %w", err)
 		}
-	} else {
-		err = configureAsReplica(spec.PrimaryName, conf.postgresPort, conf.postgresUser)
-		if err != nil {
+	} else if slices.Contains(spec.ReplicaNames, conf.nodeName) {
+		if err := configureAsReplica(spec.PrimaryName, conf.postgresPort, conf.postgresUser); err != nil {
 			return fmt.Errorf("Failed to configure as replica: %w", err)
 		}
+	} else {
+		return fmt.Errorf("Node %s is not a primary or replica in the cluster spec", conf.nodeName)
 	}
 
 	if err := ensurePostgresRunning(); err != nil {

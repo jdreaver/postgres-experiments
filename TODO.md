@@ -2,6 +2,11 @@
 
 Document what I've done so far. Maybe with some nice ASCII art.
 
+Pure logic (both for election and for state):
+- Store previous spec/status and current spec/status, as well as time diff between them.
+- Using prev/current state, spit out actions to take
+- Add a ton of tests on this logic
+
 Failover:
 - Plan and refactors:
   - Add a "cluster state", not just desired state. Put under `/cluster/observed-state` and move desired state under `/cluster/desired-state`
