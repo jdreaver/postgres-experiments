@@ -11,38 +11,6 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
-// lease holds the lease information data that is stored in a database.
-type lease struct {
-	// leader is the name of the leader node that holds the lock.
-	leader string
-
-	// revisionVersionNumber (RVN) is a unique identifier that is
-	// updated every time the leader refreshes its lease.
-	revisionVersionNumber uuid.UUID
-
-	// leaseDurationMilliseconds is the duration of the lease. A local,
-	// monotonic clock is used to determine if the lease has expired
-	// or not.
-	leaseDurationMilliseconds int64
-}
-
-// observedLease holds the latest lock we have observed and when we observed it.
-type observedLease struct {
-	lease lease
-
-	// N.B. Go's time.Now() includes a monotonic clock reading (see
-	// https://pkg.go.dev/time#hdr-Monotonic_Clocks).
-	seen time.Time
-}
-
-func (e *observedLease) IsExpired() bool {
-	if e == nil {
-		return true
-	}
-	lockDuration := time.Duration(e.lease.leaseDurationMilliseconds) * time.Millisecond
-	return time.Since(e.seen) > lockDuration
-}
-
 type EtcdBackend struct {
 	clusterName string
 
@@ -57,7 +25,7 @@ type EtcdBackend struct {
 
 const etcdRvnKey = "/rvn"
 const etcdLeaderKey = "/leader"
-const etcdDurationKey = "/lease_duration_ms"
+const etcdDurationMsKey = "/lease_duration_ms"
 
 // TODO: Too many string arguments
 func NewEtcdBackend(client *clientv3.Client, clusterName string, nodeName string, leaseDuration time.Duration) (*EtcdBackend, error) {
@@ -115,7 +83,7 @@ func (etcd *EtcdBackend) RunElection(ctx context.Context) error {
 		).Then(
 			clientv3.OpPut(etcd.electionPrefix()+etcdRvnKey, newRVN.String()),
 			clientv3.OpPut(etcd.electionPrefix()+etcdLeaderKey, etcd.nodeName),
-			clientv3.OpPut(etcd.electionPrefix()+etcdDurationKey, fmt.Sprintf("%d", etcd.leaseDuration.Milliseconds())),
+			clientv3.OpPut(etcd.electionPrefix()+etcdDurationMsKey, fmt.Sprintf("%d", etcd.leaseDuration.Milliseconds())),
 		).Commit()
 		if err != nil {
 			return fmt.Errorf("failed to commit transaction: %w", err)
@@ -144,8 +112,6 @@ func (etcd *EtcdBackend) updateObservedLease(ctx context.Context) error {
 		return nil
 	}
 
-	leaseDuration := time.Duration(lease.leaseDurationMilliseconds) * time.Millisecond
-
 	// The lease is non-nil. If it different from the last observed
 	// lease, updated the last observed lease.
 	if etcd.lastObservedLease == nil || lease.revisionVersionNumber != etcd.lastObservedLease.lease.revisionVersionNumber {
@@ -157,12 +123,12 @@ func (etcd *EtcdBackend) updateObservedLease(ctx context.Context) error {
 			"Updated observed lease. leader: %s, rvn: %s, duration: %s",
 			lease.leader,
 			lease.revisionVersionNumber,
-			leaseDuration,
+			lease.duration,
 		)
 		return nil
 	}
 
-	timeLeftInLease := time.Duration(lease.leaseDurationMilliseconds) * time.Millisecond
+	timeLeftInLease := lease.duration
 	if etcd.lastObservedLease != nil {
 		timeLeftInLease -= time.Since(etcd.lastObservedLease.seen)
 	}
@@ -171,7 +137,7 @@ func (etcd *EtcdBackend) updateObservedLease(ctx context.Context) error {
 		"No change in observed lease. leader: %s, rvn: %s, duration: %s, remaining time: %s\n",
 		lease.leader,
 		lease.revisionVersionNumber,
-		leaseDuration,
+		lease.duration,
 		timeLeftInLease,
 	)
 	return nil
@@ -196,18 +162,17 @@ func (etcd *EtcdBackend) fetchLease(ctx context.Context) (*lease, error) {
 			}
 		} else if string(kv.Key) == etcd.electionPrefix()+etcdLeaderKey {
 			lease.leader = string(kv.Value)
-		} else if string(kv.Key) == etcd.electionPrefix()+etcdDurationKey {
-			var duration int64
-			_, err := fmt.Sscanf(string(kv.Value), "%d", &duration)
-			if err != nil {
+		} else if string(kv.Key) == etcd.electionPrefix()+etcdDurationMsKey {
+			var durationMs int64
+			if _, err := fmt.Sscanf(string(kv.Value), "%d", &durationMs); err != nil {
 				return nil, fmt.Errorf("failed to parse lease duration: %w", err)
 			}
-			lease.leaseDurationMilliseconds = duration
+			lease.duration = time.Duration(durationMs) * time.Millisecond
 		} else {
 			log.Printf("WARNING: Ignoring unexpected key in election prefix: %s", kv.Key)
 		}
 	}
-	if lease.revisionVersionNumber == uuid.Nil || lease.leader == "" || lease.leaseDurationMilliseconds <= 0 {
+	if lease.revisionVersionNumber == uuid.Nil || lease.leader == "" || lease.duration <= 0 {
 		return nil, fmt.Errorf("incomplete lease data: %+v", lease)
 	}
 
@@ -221,8 +186,7 @@ func (e *EtcdBackend) IsLeader() bool {
 	if e.lastObservedLease.lease.leader != e.nodeName {
 		return false
 	}
-	leaseDuration := time.Duration(e.lastObservedLease.lease.leaseDurationMilliseconds) * time.Millisecond
-	if time.Since(e.lastObservedLease.seen) > leaseDuration {
+	if time.Since(e.lastObservedLease.seen) > e.lastObservedLease.lease.duration {
 		return false
 	}
 	return true
