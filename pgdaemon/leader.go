@@ -41,19 +41,6 @@ func performLeaderTasks(ctx context.Context, store StateStore) error {
 	}
 
 	log.Printf("Cluster spec: %+v", clusterSpec)
-	nodeSpec := NodeSpec{
-		PrimaryName: clusterSpec.PrimaryName,
-	}
-
-	if err := store.SetNodeSpec(ctx, clusterSpec.PrimaryName, &nodeSpec); err != nil {
-		return fmt.Errorf("Failed to set primary spec: %w", err)
-	}
-
-	for _, replica := range clusterSpec.ReplicaNames {
-		if err := store.SetNodeSpec(ctx, replica, &nodeSpec); err != nil {
-			return fmt.Errorf("Failed to set node spec for replica %s: %w", replica, err)
-		}
-	}
 
 	return nil
 }

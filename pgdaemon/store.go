@@ -10,7 +10,4 @@ type StateStore interface {
 	FetchClusterSpec(ctx context.Context) (*ClusterSpec, error)
 
 	WriteCurrentNodeStatus(ctx context.Context, status *NodeStatus) error
-
-	SetNodeSpec(ctx context.Context, nodeName string, spec *NodeSpec) error
-	FetchCurrentNodeSpec(ctx context.Context) (*NodeSpec, error)
 }

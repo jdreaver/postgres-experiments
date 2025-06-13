@@ -69,12 +69,12 @@ func storeNodeStatus(ctx context.Context, store StateStore, conf config) error {
 }
 
 func performNodeTasks(ctx context.Context, store StateStore, conf config) error {
-	spec, err := store.FetchCurrentNodeSpec(ctx)
+	spec, err := store.FetchClusterSpec(ctx)
 	if err != nil {
 		return fmt.Errorf("Failed to fetch node spec: %w", err)
 	}
 
-	log.Printf("Node spec for %s: %+v", conf.nodeName, spec)
+	log.Printf("Cluster spec for %s: %+v", conf.nodeName, spec)
 
 	if spec.PrimaryName == conf.nodeName {
 		err = configureAsPrimary()

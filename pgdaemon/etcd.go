@@ -81,16 +81,8 @@ func (etcd *EtcdBackend) clusterSpecPrefix() string {
 	return etcd.clusterPrefix() + "/spec"
 }
 
-func (etcd *EtcdBackend) nodePrefix(nodeName string) string {
-	return etcd.clusterPrefix() + "/nodes/" + nodeName
-}
-
-func (etcd *EtcdBackend) nodeSpecPrefix(nodeName string) string {
-	return etcd.nodePrefix(nodeName) + "/spec"
-}
-
 func (etcd *EtcdBackend) nodeStatusPrefix(nodeName string) string {
-	return etcd.nodePrefix(nodeName) + "/status"
+	return etcd.clusterPrefix() + "/node-statuses/" + nodeName
 }
 
 func (etcd *EtcdBackend) RunElection(ctx context.Context) error {
@@ -282,42 +274,6 @@ func (etcd *EtcdBackend) FetchClusterSpec(ctx context.Context) (*ClusterSpec, er
 	var spec ClusterSpec
 	if err := json.Unmarshal(resp.Kvs[0].Value, &spec); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal cluster spec: %w", err)
-	}
-
-	return &spec, nil
-}
-
-type NodeSpec struct {
-	PrimaryName string `json:"primary_name"`
-}
-
-func (etcd *EtcdBackend) SetNodeSpec(ctx context.Context, nodeName string, spec *NodeSpec) error {
-	specBytes, err := json.Marshal(spec)
-	if err != nil {
-		return fmt.Errorf("failed to marshal node spec: %w", err)
-	}
-
-	if _, err := etcd.client.Put(ctx, etcd.nodeSpecPrefix(nodeName), string(specBytes)); err != nil {
-		return fmt.Errorf("failed to write node spec to etcd: %w", err)
-	}
-
-	return nil
-}
-
-func (etcd *EtcdBackend) FetchCurrentNodeSpec(ctx context.Context) (*NodeSpec, error) {
-	prefix := etcd.nodeSpecPrefix(etcd.nodeName)
-	resp, err := etcd.client.Get(ctx, prefix)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch node spec at %s: %w", prefix, err)
-	}
-
-	if len(resp.Kvs) == 0 {
-		return nil, fmt.Errorf("node spec not found, no values under %s", prefix)
-	}
-
-	var spec NodeSpec
-	if err := json.Unmarshal(resp.Kvs[0].Value, &spec); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal node spec: %w", err)
 	}
 
 	return &spec, nil
