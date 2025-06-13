@@ -30,6 +30,11 @@ Failover:
   - New primary will stop replication
   - Replicas will point to new primary
 - Automated failover based on health signals
+  - If the primary loses a connection to the majority of replicas, it should step down (network partition)
+  - If a majority of secondaries agree they cannot connect to the primary, a new primary should be nominated (could be dead primary, could be network partition)
+
+Re-evaluate lease-based leader election. We can't ever guarantee there is only a single leader.
+- Perhaps "leader election" can be atomic compare-and-swaps for deciding cluster state, without needing a single leader that holds a lease. Each node can evaluate its state of the world and attempt to atomically write desired cluster state. The desired cluster state could itself be the "lease" (e.g. don't attempt to change state until lease expires, but no node "holds" the lease)
 
 Allow nodes to join cluster without needing to seed state. Nodes can add some sort of indicator in their status that they want to join the cluster. The leader can accept or reject and the node will know on its next loop.
 - We can set a max number of nodes as config option. This is mainly so misconfiguration doesn't bring cluster down.
@@ -37,14 +42,12 @@ Allow nodes to join cluster without needing to seed state. Nodes can add some so
 - Leader can spit out an Event for rejecting nodes so we have clear logging.
 
 TLA+ or Quint to model out leader election in isolation and leader election + failover
+- https://learntla.com/
+- https://quint-lang.org/docs/why
+- Use the model to inform tests in the code (unit tests, integration tests, randomized/property tests, etc)
 
 Run MongoDB locally too.
 - Get benchmark MongoDB data set and get it replicated into postgres so we can compare apples to apples
-
-Add tests! Ideally reconciliation logic is pure enough we can test, and/or use a mock backend
-
-Implement actual failover when primary changes
-- Leader should pick replica with the highest `written_lsn` to be the new primary
 
 Make distinction between "can't connect to postgres" and "my queries failed".
 
@@ -52,7 +55,7 @@ Better structured logging. Use context more, like to store goroutine "name" (lea
 
 Use https://github.com/spf13/viper to separate daemon and init command line flags and to support more configuration possibilities
 
-Investigate why inserting imdb data is so much slower. Used to take like 1.5 minutes total, now it is like 8 minutes. Replicas? Vacuuming?
+Investigate why inserting imdb data is so much slower sometimes. Used to take like 1.5 minutes total, now it is like 8 minutes. Replicas? Vacuuming? It is intermittent.
 
 pgdaemon architecture ideas:
 - Any pgdaemon can accept user commands and influence desired state by putting it into etcd, like "perform a failover" or even "perform a failover to node X"
