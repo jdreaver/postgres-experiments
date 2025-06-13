@@ -6,6 +6,7 @@ Pure logic (both for election and for state):
 - Store previous spec/status and current spec/status, as well as time diff between them.
 - Using prev/current state, spit out actions to take
 - Add a ton of tests on this logic
+- Invert leader election so etcd matches an interface for a leader election backend, and the leader election logic uses etcd (currently etcd uses the leader election logic)
 
 Failover:
 - Plan and refactors:

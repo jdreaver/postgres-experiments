@@ -54,20 +54,28 @@ func (etcd *EtcdBackend) nodeStatusPrefix(nodeName string) string {
 }
 
 func (etcd *EtcdBackend) RunElection(ctx context.Context) error {
-	err := etcd.updateObservedLease(ctx)
+	lease, err := etcd.fetchLease(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to update observed lease: %w", err)
+		etcd.lastObservedLease = nil
+		return fmt.Errorf("failed to fetch lease: %w", err)
 	}
 
-	// If the lease has expired (or there is no lease), try to
-	// become the leader. If we are the leader, update the lease
-	// anyway to get a new RVN.
-	if etcd.lastObservedLease == nil || etcd.lastObservedLease.IsExpired() || etcd.lastObservedLease.lease.leader == etcd.nodeName {
-		// Warn if we are the current lease holder
-		if etcd.lastObservedLease != nil && etcd.lastObservedLease.IsExpired() && etcd.lastObservedLease.lease.leader == etcd.nodeName {
-			log.Printf("WARNING: Our own lease has expired!")
-		}
+	result := evaluateElection(etcd.lastObservedLease, lease, etcd.nodeName, time.Now())
+	etcd.lastObservedLease = result.lease
+	if result.lease != nil {
+		log.Printf(
+			"Lease: leader: %s, rvn: %s, duration: %s, time left: %s",
+			result.lease.lease.leader,
+			result.lease.lease.revisionVersionNumber,
+			result.lease.lease.duration,
+			result.lease.timeLeft,
+		)
+	}
+	if result.comment != "" {
+		log.Printf("Election evaluation: %s", result.comment)
+	}
 
+	if result.shouldRunElection {
 		newRVN := uuid.New()
 
 		// By default, assume previous lease doesn't exist
@@ -96,50 +104,6 @@ func (etcd *EtcdBackend) RunElection(ctx context.Context) error {
 		}
 	}
 
-	return nil
-}
-
-func (etcd *EtcdBackend) updateObservedLease(ctx context.Context) error {
-	lease, err := etcd.fetchLease(ctx)
-	if err != nil {
-		etcd.lastObservedLease = nil
-		return fmt.Errorf("failed to fetch lease: %w", err)
-	}
-
-	// If lease is nil, it means there is no current leader
-	if lease == nil {
-		etcd.lastObservedLease = nil
-		return nil
-	}
-
-	// The lease is non-nil. If it different from the last observed
-	// lease, updated the last observed lease.
-	if etcd.lastObservedLease == nil || lease.revisionVersionNumber != etcd.lastObservedLease.lease.revisionVersionNumber {
-		etcd.lastObservedLease = &observedLease{
-			lease: *lease,
-			seen:  time.Now(),
-		}
-		log.Printf(
-			"Updated observed lease. leader: %s, rvn: %s, duration: %s",
-			lease.leader,
-			lease.revisionVersionNumber,
-			lease.duration,
-		)
-		return nil
-	}
-
-	timeLeftInLease := lease.duration
-	if etcd.lastObservedLease != nil {
-		timeLeftInLease -= time.Since(etcd.lastObservedLease.seen)
-	}
-
-	log.Printf(
-		"No change in observed lease. leader: %s, rvn: %s, duration: %s, remaining time: %s\n",
-		lease.leader,
-		lease.revisionVersionNumber,
-		lease.duration,
-		timeLeftInLease,
-	)
 	return nil
 }
 

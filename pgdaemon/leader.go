@@ -25,7 +25,6 @@ func leaderReconcilerLoop(ctx context.Context, store StateStore) error {
 			}
 
 			if store.IsLeader() {
-				log.Printf("I'm the leader")
 				if err := performLeaderTasks(ctx, store); err != nil {
 					log.Printf("Failed to perform leader tasks: %v", err)
 				}
