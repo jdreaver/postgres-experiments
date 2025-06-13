@@ -3,6 +3,7 @@
 Document what I've done so far. Maybe with some nice ASCII art.
 
 Pure logic (both for election and for state):
+- Move `election` into its own package.
 - Add a ton of tests on this logic
 - Store previous spec/status and current spec/status, as well as time diff between them.
 - Using prev/current state, spit out actions to take
@@ -26,6 +27,11 @@ Failover:
   - New primary will stop replication
   - Replicas will point to new primary
 - Automated failover based on health signals
+
+Allow nodes to join cluster without needing to seed state. Nodes can add some sort of indicator in their status that they want to join the cluster. The leader can accept or reject and the node will know on its next loop.
+- We can set a max number of nodes as config option. This is mainly so misconfiguration doesn't bring cluster down.
+- Consider putting timeout on nodes trying to join cluster so they fail if they are never allowed to join.
+- Leader can spit out an Event for rejecting nodes so we have clear logging.
 
 TLA+ or Quint to model out leader election in isolation and leader election + failover
 
@@ -60,6 +66,7 @@ pgdaemon features:
 - Nodes should ping one another so they can determine if etcd/DDB is down. If all nodes can be contacted, then continue as usual (sans leader elections). Especially important for primary. If primary can still contact a majority of replicas, then don't step down. If it can't, then step down.
 - Write thorough tests, perhaps with a real backend, and with a mock backend with mocked time
 - DynamoDB backend (just abstract common bits from etcd backend)
+  - If cost becomes an issue, especially with DynamoDB, consider performing a full prefix scan of all etcd data for a cluster instead of individual "gets". (Individual nodes can skip node status.) Then we only need one read unit per loop.
 
 Physical vs logical replication
 - "Physical replication group" is standard HA setup (1 primary, 1+ replicas).
