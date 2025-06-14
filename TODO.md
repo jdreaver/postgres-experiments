@@ -2,6 +2,13 @@
 
 Document what I've done so far. Maybe with some nice ASCII art.
 
+Dirty failover plan:
+- (Remember to try and make this logic pure)
+- Read node state, making distinction between "can't connect to node" and "failed to run query"
+- Using node state, decide on actions to take
+  - Current action of setting up DB if it is off can be combined: run pg_basebackup or initdb and then systemct start postgres. Then probably need to wait a few loops for it to actually be on.
+- If we can connect to postgres, then we can do either `ALTER SYSTEM SET primary_conninfo = ...` or `pg_promote()`
+
 Pure logic (both for election and for state):
 - Add a ton of tests on this logic
 - Store previous spec/status and current spec/status, as well as time diff between them.
