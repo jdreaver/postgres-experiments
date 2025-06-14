@@ -134,8 +134,7 @@ const pgDataDir = "/var/lib/postgres/data"
 const pgVersionFile = pgDataDir + "/PG_VERSION"
 
 func configureAsReplica(ctx context.Context, host string, port int, primaryHost string, primaryPort int, user string) error {
-	_, err := os.Stat(pgVersionFile)
-	if errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(pgVersionFile); errors.Is(err, os.ErrNotExist) {
 		log.Printf("Initializing replica for primary %s database in %s", primaryHost, pgDataDir)
 
 		// TODO: Ensure postgres is not running
@@ -232,8 +231,7 @@ func configureAsReplica(ctx context.Context, host string, port int, primaryHost 
 }
 
 func configureAsPrimary(ctx context.Context, host string, port int, user string) error {
-	_, err := os.Stat(pgVersionFile)
-	if errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(pgVersionFile); errors.Is(err, os.ErrNotExist) {
 		log.Printf("Initializing primary database in %s", pgDataDir)
 
 		// TODO: Ensure postgres is not running
