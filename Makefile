@@ -1,6 +1,4 @@
 MACHINES =
-MACHINES += etcd0
-MACHINES += haproxy0
 
 POSTGRES_MACHINES = pg0 pg1 pg2
 MACHINES += $(POSTGRES_MACHINES)
@@ -59,3 +57,7 @@ imdb: pg0 init_cluster
 .PHONY: pgbench
 pgbench: pg0 init_cluster
 	$(RUN) run_pgbench $<
+
+.PHONY: test
+test:
+	go -C pgdaemon test ./...

@@ -33,6 +33,10 @@ Failover:
   - If the primary loses a connection to the majority of replicas, it should step down (network partition)
   - If a majority of secondaries agree they cannot connect to the primary, a new primary should be nominated (could be dead primary, could be network partition)
 
+Use postgres system identifier to identify the cluster https://pgpedia.info/d/database-system-identifier.html
+- All nodes should share this identifier. Find a way to abort if a local node's identifier is different (except before it tries to join the cluster)
+- Patroni uses this https://patroni.readthedocs.io/en/latest/faq.html#dcs
+
 Re-evaluate lease-based leader election. We can't ever guarantee there is only a single leader.
 - Perhaps "leader election" can be atomic compare-and-swaps for deciding cluster state, without needing a single leader that holds a lease. Each node can evaluate its state of the world and attempt to atomically write desired cluster state. The desired cluster state could itself be the "lease" (e.g. don't attempt to change state until lease expires, but no node "holds" the lease)
 
