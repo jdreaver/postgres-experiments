@@ -78,8 +78,7 @@ func performNodeTasks(ctx context.Context, store StateStore, conf config) error 
 	log.Printf("Cluster spec for %s: %+v", conf.nodeName, spec)
 
 	if spec.PrimaryName == conf.nodeName {
-		err = configureAsPrimary()
-		if err != nil {
+		if err := configureAsPrimary(); err != nil {
 			return fmt.Errorf("Failed to configure as primary: %w", err)
 		}
 	} else if slices.Contains(spec.ReplicaNames, conf.nodeName) {
