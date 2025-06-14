@@ -78,19 +78,15 @@ func performNodeTasks(ctx context.Context, store StateStore, conf config) error 
 	log.Printf("Cluster spec for %s: %+v", conf.nodeName, spec)
 
 	if spec.PrimaryName == conf.nodeName {
-		if err := configureAsPrimary(); err != nil {
+		if err := configureAsPrimary(ctx, conf.postgresHost, conf.postgresPort, conf.postgresUser); err != nil {
 			return fmt.Errorf("Failed to configure as primary: %w", err)
 		}
 	} else if slices.Contains(spec.ReplicaNames, conf.nodeName) {
-		if err := configureAsReplica(spec.PrimaryName, conf.postgresPort, conf.postgresUser); err != nil {
+		if err := configureAsReplica(ctx, conf.postgresHost, conf.postgresPort, spec.PrimaryName, conf.postgresPort, conf.postgresUser); err != nil {
 			return fmt.Errorf("Failed to configure as replica: %w", err)
 		}
 	} else {
 		return fmt.Errorf("Node %s is not a primary or replica in the cluster spec", conf.nodeName)
-	}
-
-	if err := ensurePostgresRunning(); err != nil {
-		return fmt.Errorf("Failed to ensure Postgres is running: %w", err)
 	}
 
 	if err := ensurePgBouncerRunning(); err != nil {

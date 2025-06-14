@@ -2,12 +2,19 @@
 
 Document what I've done so far. Maybe with some nice ASCII art.
 
-Dirty failover plan:
-- (Remember to try and make this logic pure)
+Failover plan:
+- Remember to try and make this logic pure
+  - I think we are trying to do too much serially in `configureAsPrimary` and `configureAsReplica`. It is okay, and probably more robust, to wait until the next loop iteration to do the next task instead of trying to do it all ASAP.
+    - Alternatively, maybe it is more robust to have an idempotent function that tries to do it all. It can query the primary directly instead of relying on state.
+  - Use the `pg_is_in_recovery()` result from state, and consider also consider caching `SHOW primary_conninfo` (although it is kind of wasteful to do a `SHOW` if we are already connected to a primary successfully)
+- Dirty failover is _too_ dirty. Need a bit of coordination (shut down primary, allow catchup, etc). Seeing too much WAL divergence because of race conditions.
+  - Have replicas wait until new primary is reporting as a primary before trying to connect to it
+  - Be more careful with terminating walreceiver. Maybe detect if we have to and only do it if necessary (investigate when this is necessary)
 - Read node state, making distinction between "can't connect to node" and "failed to run query"
-- Using node state, decide on actions to take
-  - Current action of setting up DB if it is off can be combined: run pg_basebackup or initdb and then systemct start postgres. Then probably need to wait a few loops for it to actually be on.
-- If we can connect to postgres, then we can do either `ALTER SYSTEM SET primary_conninfo = ...` or `pg_promote()`
+
+Replication settings:
+- Consider using replication slots
+- Detect if replica cannot possibly catch up because `SELECT pg_last_wal_replay_lsn();` on the replica is older than `SELECT restart_lsn FROM pg_replication_slots;` for that replica's slot on the primary
 
 Pure logic (both for election and for state):
 - Add a ton of tests on this logic
@@ -18,12 +25,12 @@ Testing:
 - Test `runInner` with mocked backend for leader election
 - Property tests that run "actions" sorted by time for leader election. Assert we have at most one leader at a time (no more than one node _thinks_ they are leader)
 
+Rethink PGDATA initialization: it would be nice to not have pgdaemon do so much of this (setting params and stuff). Maybe specify `-primary-init-script` and `-replica-init-script` args and put our logic in there. pgdaemon can just set relevant env vars for the replica script. Or we can just specify "extra config".
+- Also consider having a `postgresql-pgdaemon.conf` that gets `include`ed (with `include_if_exists` or do e.g. `include_dir 'postgresql.conf.d/'`)
+
 Failover:
 - Plan and refactors:
   - Add a "cluster state", not just desired state. Put under `/cluster/observed-state` and move desired state under `/cluster/desired-state`
-  - Dirty failover: very simple. Just do `pg_promote(wait => true)` or `ALTER SYSTEM SET primary_conninfo = '...'` + `SELECT pg_reload_conf();`
-  - State machine with state
-  - Make reconciliation logic pure
   - Stop primary writes (but not primary process!) and wait for a secondary to catch up (with timeout) before failing over
   - Detect degradation automatically and fail over
 - First to manual failover where we select new primary with pgdaemon
@@ -62,7 +69,9 @@ Run MongoDB locally too.
 
 Make distinction between "can't connect to postgres" and "my queries failed".
 
-Better structured logging. Use context more, like to store goroutine "name" (leader, node reconciler, health check server)
+Logging
+- Use log levels that systemd understands so we can filter out INFO logs sometimes (any significant events can be a higher level, maybe)
+- Structured logging: Use context more, like to store goroutine "name" (leader, node reconciler, health check server)
 
 Use https://github.com/spf13/viper to separate daemon and init command line flags and to support more configuration possibilities
 
@@ -74,8 +83,6 @@ pgdaemon architecture ideas:
 - Have leader clear out stale node state
   - Warn if we are seeing a node with a recent observed-state but that shouldn't be in the cluster
 - Record important events, either with a well known log line identifier or in etcd/DDB (like the k8s Events API). Things like health check failures, failover starts/ends, manual failover, etc.
-- Rethink PGDATA initialization: it would be nice to not have pgdaemon do so much of this (setting params and stuff). Maybe specify `-primary-init-script` and `-replica-init-script` args and put our logic in there. pgdaemon can just set relevant env vars for the replica script. Or we can just specify "extra config".
-  - Also consider having a `postgresql-pgdaemon.conf` that gets `include`ed (or do e.g. `include_dir 'postgresql.conf.d/'`)
 - Make reconciler logic (both leader and node) pure. Do IO before and after, but not during. (Or have an interface that does IO)
   - As much as possible, reconcilers should be like "compilers" that take state and produce actions.
 

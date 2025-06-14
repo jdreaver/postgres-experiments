@@ -133,7 +133,7 @@ func checkIsPrimary(host string, port int, user string, connTimeout time.Duratio
 const pgDataDir = "/var/lib/postgres/data"
 const pgVersionFile = pgDataDir + "/PG_VERSION"
 
-func configureAsReplica(primaryHost string, primaryPort int, user string) error {
+func configureAsReplica(ctx context.Context, host string, port int, primaryHost string, primaryPort int, user string) error {
 	_, err := os.Stat(pgVersionFile)
 	if errors.Is(err, os.ErrNotExist) {
 		log.Printf("Initializing replica for primary %s database in %s", primaryHost, pgDataDir)
@@ -153,13 +153,85 @@ func configureAsReplica(primaryHost string, primaryPort int, user string) error 
 		}
 	}
 
-	// TODO: Check if pg_is_in_recovery() is false. If so, we need
+	// Ensure standby.signal exists
+	standbySignalPath := pgDataDir + "/standby.signal"
+	if _, err := os.Stat(standbySignalPath); errors.Is(err, os.ErrNotExist) {
+		log.Printf("Creating standby.signal in %s", pgDataDir)
+		if err := os.WriteFile(standbySignalPath, []byte{}, 0644); err != nil {
+			return fmt.Errorf("failed to create standby.signal: %w", err)
+		}
+	}
+
+	if err := ensurePostgresRunning(); err != nil {
+		return fmt.Errorf("Failed to ensure Postgres is running: %w", err)
+	}
+
+	// Check if pg_is_in_recovery() is false. If so, we need
 	// to point to new primary and become a replica.
+	conn, err := connectPostgres(ctx, host, port, user)
+	if err != nil {
+		return fmt.Errorf("failed to connect to Postgres: %w", err)
+	}
+	defer conn.Close(ctx)
+
+	// Fetch conninfo to see if we need to change it
+	var currentConninfo string
+	if err := conn.QueryRow(ctx, "SHOW primary_conninfo").Scan(&currentConninfo); err != nil {
+		return fmt.Errorf("failed to get current primary_conninfo: %w", err)
+	}
+
+	expectedConninfo := fmt.Sprintf("host=%s port=%d user=%s", primaryHost, primaryPort, user)
+
+	if currentConninfo != expectedConninfo {
+		log.Printf("Primary connection info is %s, changing to %s", currentConninfo, expectedConninfo)
+
+		query := fmt.Sprintf("ALTER SYSTEM SET primary_conninfo = '%s'", expectedConninfo)
+		if _, err := conn.Exec(ctx, query); err != nil {
+			return fmt.Errorf("failed to set primary_conninfo: %w", err)
+		}
+		if _, err := conn.Exec(ctx, "SELECT pg_reload_conf()"); err != nil {
+			return fmt.Errorf("failed to reload Postgres configuration: %w", err)
+		}
+
+		// Kill walreceiver to force a reconnect TODO: Make this more
+		// robust? What if primary_conninfo was properly set but we
+		// failed before this line. We might never restart walreceiver.
+		if _, err := conn.Exec(ctx, "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = 'walreceiver'"); err != nil {
+			return fmt.Errorf("failed to terminate walreceiver: %w", err)
+		}
+	}
+
+	var isInRecovery bool
+	if err := conn.QueryRow(ctx, "SELECT pg_is_in_recovery()").Scan(&isInRecovery); err != nil {
+		return fmt.Errorf("failed to check pg_is_in_recovery: %w", err)
+	}
+	if !isInRecovery {
+		log.Printf("Postgres is not in recovery mode. Must be the old primary. Need to stop")
+		if err := stopPostgres(); err != nil {
+			return fmt.Errorf("failed to stop Postgres: %w", err)
+		}
+
+		// Run pg_rewind. TODO: We don't necessarily need to do
+		// this every time, but since we must stop the primary
+		// anyway we can be safe.
+		cmd := exec.Command("pg_rewind", "--target-pgdata", pgDataDir, "--source-server=host="+primaryHost+" port="+fmt.Sprintf("%d", primaryPort)+" user="+user)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to run pg_rewind: %w", err)
+		}
+		log.Printf("pg_rewind completed successfully, Postgres should now be a replica of %s", primaryHost)
+
+		if err := ensurePostgresRunning(); err != nil {
+			return fmt.Errorf("Failed to ensure Postgres is running after pg_rewind: %w", err)
+		}
+		log.Printf("Postgres restarted successfully after pg_rewind, now a replica of %s", primaryHost)
+	}
 
 	return nil
 }
 
-func configureAsPrimary() error {
+func configureAsPrimary(ctx context.Context, host string, port int, user string) error {
 	_, err := os.Stat(pgVersionFile)
 	if errors.Is(err, os.ErrNotExist) {
 		log.Printf("Initializing primary database in %s", pgDataDir)
@@ -179,8 +251,30 @@ func configureAsPrimary() error {
 		}
 	}
 
-	// TODO: Check if pg_is_in_recovery() is true, and do a
-	// pg_promote() (probably requires careful coordination)
+	if err := ensurePostgresRunning(); err != nil {
+		return fmt.Errorf("Failed to ensure Postgres is running: %w", err)
+	}
+
+	conn, err := connectPostgres(ctx, host, port, user)
+	if err != nil {
+		return fmt.Errorf("failed to connect to Postgres: %w", err)
+	}
+	defer conn.Close(ctx)
+
+	var isInRecovery bool
+	if err := conn.QueryRow(ctx, "SELECT pg_is_in_recovery()").Scan(&isInRecovery); err != nil {
+		return fmt.Errorf("failed to check pg_is_in_recovery: %w", err)
+	}
+	if !isInRecovery {
+		log.Printf("Postgres is already not in recovery mode, no need to configure as primary")
+		return nil
+	}
+
+	// Run pg_promote to become primary
+	if _, err := conn.Exec(ctx, "SELECT pg_promote(wait => true)"); err != nil {
+		return fmt.Errorf("failed to promote Postgres to primary: %w", err)
+	}
+	log.Printf("Postgres promoted to primary successfully")
 
 	return nil
 }
@@ -202,7 +296,14 @@ synchronous_commit = off
 work_mem = 64MB
 maintenance_work_mem = 2GB
 
-# Support replication
+# Store more WAL so replicas can catch up and we can pg_rewind
+max_wal_size = 2GB
+wal_keep_size = 2GB
+
+# Support pg_rewind
+wal_log_hints = on
+
+# Support logical replication
 wal_level = logical
 `)
 
@@ -238,12 +339,19 @@ func appendToFile(path string, content string) error {
 	return nil
 }
 
+const postgresSystemdUnit = "postgresql.service"
+const pgBouncerSystemdUnit = "pgbouncer.service"
+
 func ensurePostgresRunning() error {
-	return ensureSystemdUnitRunning("postgresql.service")
+	return ensureSystemdUnitRunning(postgresSystemdUnit)
+}
+
+func stopPostgres() error {
+	return runSystemctl("stop", postgresSystemdUnit)
 }
 
 func ensurePgBouncerRunning() error {
-	return ensureSystemdUnitRunning("pgbouncer.service")
+	return ensureSystemdUnitRunning(pgBouncerSystemdUnit)
 }
 
 func ensureSystemdUnitRunning(name string) error {
@@ -254,13 +362,19 @@ func ensureSystemdUnitRunning(name string) error {
 	cmd := exec.Command("systemctl", "is-active", "--quiet", name)
 	if err := cmd.Run(); err != nil {
 		log.Printf("%s might not not running, attempting to start it", name)
-		startCmd := exec.Command("sudo", "systemctl", "start", name)
-		startCmd.Stdout = os.Stdout
-		startCmd.Stderr = os.Stderr
-		if err := startCmd.Run(); err != nil {
-			return fmt.Errorf("failed to start %s: %w", name, err)
-		}
+		return runSystemctl("start", name)
 	}
 
+	return nil
+}
+
+func runSystemctl(command string, name string) error {
+	cmd := exec.Command("sudo", "systemctl", command, name)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to %s %s: %w", command, name, err)
+	}
+	log.Printf("Ran systemctl %s %s successfully", command, name)
 	return nil
 }

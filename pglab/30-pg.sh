@@ -11,7 +11,7 @@ setup_postgres() {
 
     # Allow postgres user to start and stop postgres
     sudo tee "$directory/etc/sudoers.d/100-postgres" > /dev/null <<EOF
-postgres ALL=(ALL) NOPASSWD: /usr/bin/systemctl start postgresql.service, /usr/bin/systemctl stop postgresql.service, /usr/bin/systemctl start pgbouncer.service, /usr/bin/systemctl stop pgbouncer.service
+postgres ALL=(ALL) NOPASSWD: /usr/bin/systemctl start postgresql.service, /usr/bin/systemctl stop postgresql.service, /usr/bin/systemctl restart postgresql.service, /usr/bin/systemctl start pgbouncer.service, /usr/bin/systemctl stop pgbouncer.service, /usr/bin/systemctl restart pgbouncer.service
 EOF
 
     sudo mkdir -p "$directory/etc/pgbouncer"

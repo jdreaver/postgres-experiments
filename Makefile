@@ -31,10 +31,13 @@ network:
 .PHONY: pgbase
 pgbase:
 	$(RUN) create_pgbase_machine
+
+.PHONY: pgdaemon
+pgdaemon: pgbase
 	$(RUN) build_pgdaemon
 
 .PHONY: $(MACHINES)
-$(MACHINES): network pgbase
+$(MACHINES): network pgbase pgdaemon
 	$(RUN) create_machine $@
 	$(RUN) sudo machinectl start $@
 
