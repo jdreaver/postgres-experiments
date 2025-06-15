@@ -40,8 +40,8 @@ func main() {
 	}
 
 	switch conf.command {
-	case "init-cluster":
-		initCluster(ctx, store, conf)
+	case "set-cluster-spec":
+		setClusterSpec(ctx, store, conf)
 	case "daemon":
 		daemon(ctx, store, conf, pgNode)
 	default:
@@ -51,15 +51,14 @@ func main() {
 	}
 }
 
-func initCluster(ctx context.Context, store StateStore, conf config) {
+func setClusterSpec(ctx context.Context, store StateStore, conf config) {
 	spec := ClusterSpec{
 		PrimaryName:  conf.primaryName,
 		ReplicaNames: conf.replicaNames,
 	}
 
-	err := store.InitializeCluster(ctx, &spec)
-	if err != nil {
-		log.Fatalf("Failed to initialize cluster: %v", err)
+	if err := store.SetClusterSpec(ctx, &spec); err != nil {
+		log.Fatalf("Failed to set cluster spec: %v", err)
 	}
 }
 

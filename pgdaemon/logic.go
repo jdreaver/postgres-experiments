@@ -1,13 +1,21 @@
 package main
 
-// ClusterSpec defines the desired state of the cluster.
-type ClusterSpec struct {
-	PrimaryName  string   `json:"primary_name"`
-	ReplicaNames []string `json:"replica_names"`
+import (
+	"context"
+	"pgdaemon/election"
+)
+
+type StateStore interface {
+	election.ElectionBackend
+
+	SetClusterSpec(ctx context.Context, spec *ClusterSpec) error
+	FetchClusterSpec(ctx context.Context) (*ClusterSpec, error)
+
+	WriteCurrentNodeStatus(ctx context.Context, status *NodeStatus) error
 }
 
-// ClusterStatus defines the observed state of the cluster.
-type ClusterStatus struct {
+// ClusterSpec defines the desired state of the cluster.
+type ClusterSpec struct {
 	PrimaryName  string   `json:"primary_name"`
 	ReplicaNames []string `json:"replica_names"`
 }

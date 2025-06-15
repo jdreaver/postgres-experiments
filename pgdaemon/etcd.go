@@ -118,7 +118,7 @@ func (etcd *EtcdBackend) WriteCurrentNodeStatus(ctx context.Context, status *Nod
 	return nil
 }
 
-func (etcd *EtcdBackend) InitializeCluster(ctx context.Context, spec *ClusterSpec) error {
+func (etcd *EtcdBackend) SetClusterSpec(ctx context.Context, spec *ClusterSpec) error {
 	if spec.PrimaryName == "" {
 		return fmt.Errorf("primary name cannot be empty")
 	}
@@ -133,7 +133,7 @@ func (etcd *EtcdBackend) InitializeCluster(ctx context.Context, spec *ClusterSpe
 		return fmt.Errorf("failed to write cluster spec to etcd: %w", err)
 	}
 
-	log.Printf("Cluster spec initialized: %s", string(specBytes))
+	log.Printf("Cluster spec set: %s", string(specBytes))
 
 	return nil
 }

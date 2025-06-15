@@ -2,6 +2,10 @@
 
 Document what I've done so far. Maybe with some nice ASCII art.
 
+Cluster logic:
+- Store entire cluster state as single data structure and fetch at once.
+  - First have node write its current status, and then fetch entire cluster state (so we know current node is up to date)
+
 Failover plan:
 - Remember to try and make this logic pure
   - I think we are trying to do too much serially in `configureAsPrimary` and `configureAsReplica`. It is okay, and probably more robust, to wait until the next loop iteration to do the next task instead of trying to do it all ASAP.
@@ -34,7 +38,6 @@ Failover:
   - Stop primary writes (but not primary process!) and wait for a secondary to catch up (with timeout) before failing over
   - Detect degradation automatically and fail over
 - First to manual failover where we select new primary with pgdaemon
-  - Rename `init` command to something else, like `set-cluster-state`
 - Failover process:
   - Cluster states: `provisioning`, `healthy`, `failing-over`, `unhealthy`?
   - Leader detects desired primary does not match current primary. Sets cluster to a `failover` state.

@@ -41,24 +41,24 @@ $(MACHINES): network pgbase pgdaemon
 	$(RUN) create_machine $@
 	$(RUN) sudo machinectl start $@
 
-.PHONY: init_cluster
-init_cluster: $(ETCD_MACHINES)
-	$(RUN) initialize_cluster_state
+.PHONY: set_cluster_spec
+set_cluster_spec: $(ETCD_MACHINES)
+	$(RUN) set_cluster_spec
 
 .PHONY: pg_cluster
-pg_cluster: init_cluster $(POSTGRES_MACHINES) $(ETCD_MACHINES) $(HAPROXY_MACHINES)
+pg_cluster: $(POSTGRES_MACHINES) $(ETCD_MACHINES) $(HAPROXY_MACHINES) set_cluster_spec
 
 .PHONY: init_replset
 init_replset: $(MONGO_MACHINES)
 	$(RUN) init_mongo_replset
 
 .PHONY: imdb
-imdb: pg0 init_cluster
+imdb: pg0 set_cluster_spec
 	$(RUN) download_imdb_datasets
 	$(RUN) populate_imdb_data $<
 
 .PHONY: pgbench
-pgbench: pg0 init_cluster
+pgbench: pg0 set_cluster_spec
 	$(RUN) run_pgbench $<
 
 .PHONY: test
