@@ -71,10 +71,10 @@ type PostgresPgStatReplica struct {
 	ClientAddr     string
 	ClientPort     string
 	State          string
-	SentLsn        string
-	WriteLsn       string
-	FlushLsn       string
-	ReplayLsn      string
+	SentLsn        *string
+	WriteLsn       *string
+	FlushLsn       *string
+	ReplayLsn      *string
 	WriteLag       *string
 	FlushLag       *string
 	ReplayLag      *string

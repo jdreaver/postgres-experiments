@@ -43,7 +43,7 @@ type NodeStatus struct {
 type NodeReplicas struct {
 	Hostname  string  `json:"hostname"`
 	State     string  `json:"state"`
-	WriteLsn  string  `json:"write_lsn"`
+	WriteLsn  *string `json:"write_lsn"`
 	WriteLag  *string `json:"write_lag"`
 	SyncState string  `json:"sync_state"`
 	ReplyTime string  `json:"reply_time"`
