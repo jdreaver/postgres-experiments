@@ -35,18 +35,13 @@ func main() {
 		log.Fatalf("Failed to create election: %v", err)
 	}
 
-	pgNode, err := NewPostgresNode(conf.postgresHost, conf.postgresPort, conf.postgresUser, conf.pgBouncerHost, conf.pgBouncerPort)
-	if err != nil {
-		log.Fatalf("Failed to create Postgres node: %v", err)
-	}
-
 	switch conf.command {
 	case "set-cluster-spec":
 		setClusterSpec(ctx, store, conf)
 	case "show-cluster":
 		showCluster(ctx, store)
 	case "daemon":
-		daemon(ctx, store, conf, pgNode)
+		daemon(ctx, store, conf)
 	default:
 		flag.Usage()
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", conf.command)
@@ -78,7 +73,12 @@ func showCluster(ctx context.Context, store StateStore) {
 	fmt.Println(string(jsonBytes))
 }
 
-func daemon(ctx context.Context, store StateStore, conf config, pgNode *PostgresNode) {
+func daemon(ctx context.Context, store StateStore, conf config) {
+	pgNode, err := NewPostgresNode(conf.postgresHost, conf.postgresPort, conf.postgresUser, conf.pgBouncerHost, conf.pgBouncerPort)
+	if err != nil {
+		log.Fatalf("Failed to create Postgres node: %v", err)
+	}
+
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
