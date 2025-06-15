@@ -1,9 +1,10 @@
 # TODO
 
 Write benchmark program in Go:
-- Use imdb dataset for now
+- Use a synthetic dataset.
 - MongoDB probably only has one storage format (everything squished in a document), while postgres can either do tables or id/jsonb.
 - Varying number of indexes?
+- With or without foreign keys
 - Transactions or not in postgres
 - Also measure how much downtime we incur during failover, and how well we can continue on while retrying queries
 
@@ -14,10 +15,6 @@ Failover plan:
   - Have replicas wait until new primary is reporting as a primary before trying to connect to it
   - Be more careful with terminating walreceiver. Maybe detect if we have to and only do it if necessary (investigate when this is necessary)
 - Read node state, making distinction between "can't connect to node" and "failed to run query"
-
-Replication settings:
-- Consider using replication slots
-- Detect if replica cannot possibly catch up because `SELECT pg_last_wal_replay_lsn();` on the replica is older than `SELECT restart_lsn FROM pg_replication_slots;` for that replica's slot on the primary
 
 Pure logic (both for election and for state):
 - Add a ton of tests on this logic
@@ -49,9 +46,14 @@ Failover:
   - If the primary loses a connection to the majority of replicas, it should step down (network partition)
   - If a majority of secondaries agree they cannot connect to the primary, a new primary should be nominated (could be dead primary, could be network partition)
 
+Events system:
+- Record important events, either with a well known log line identifier or in etcd/DDB (like the k8s Events API). Things like health check failures, failover starts/ends, manual failover, etc.
+- We can flush events to postgres if we want, to keep etcd clear.
+
 Use a replication slot per replica so we don't lose WAL https://www.postgresql.org/docs/current/warm-standby.html#STREAMING-REPLICATION-SLOTS
 - It might actually be nice for replicas to be able to check that the slot is ready before trying to boot.
 - If we do this, then maybe lower `wal_keep_size`?
+- Detect if replica cannot possibly catch up because `SELECT pg_last_wal_replay_lsn();` on the replica is older than `SELECT restart_lsn FROM pg_replication_slots;` for that replica's slot on the primary
 
 Use postgres system identifier to identify the cluster https://pgpedia.info/d/database-system-identifier.html
 - All nodes should share this identifier. Find a way to abort if a local node's identifier is different (except before it tries to join the cluster)
@@ -83,20 +85,16 @@ Use https://github.com/spf13/viper to separate daemon and init command line flag
 
 Investigate why inserting imdb data is so much slower sometimes. Used to take like 1.5 minutes total, now it is like 8 minutes. Replicas? Vacuuming? It is intermittent.
 
-pgdaemon architecture ideas:
-- Any pgdaemon can accept user commands and influence desired state by putting it into etcd, like "perform a failover" or even "perform a failover to node X"
-- Be smarter about loop duration. Slow down when things are healthy and speed up when not?
-- Have leader clear out stale node state
-  - Warn if we are seeing a node with a recent observed-state but that shouldn't be in the cluster
-- Record important events, either with a well known log line identifier or in etcd/DDB (like the k8s Events API). Things like health check failures, failover starts/ends, manual failover, etc.
-- Make reconciler logic (both leader and node) pure. Do IO before and after, but not during. (Or have an interface that does IO)
-  - As much as possible, reconcilers should be like "compilers" that take state and produce actions.
+Be smarter about loop duration to save costs. Slow down when things are healthy and speed up when not?
+- We could have a loop duration we use when everything is fine (say, 3s) and a faster duration if anything is unhealthy or not converged to desired state (say, 0.5s)
+- pgdaemons could listen on a UDP port for a "wakeup" that other nodes could fire off to all nodes when something significant happens, like a state change, or health degradation
 
-pgdaemon features:
-- Nodes should ping one another so they can determine if etcd/DDB is down. If all nodes can be contacted, then continue as usual (sans leader elections). Especially important for primary. If primary can still contact a majority of replicas, then don't step down. If it can't, then step down.
-- Write thorough tests, perhaps with a real backend, and with a mock backend with mocked time
-- DynamoDB backend (just abstract common bits from etcd backend)
-  - If cost becomes an issue, especially with DynamoDB, consider performing a full prefix scan of all etcd data for a cluster instead of individual "gets". (Individual nodes can skip node status.) Then we only need one read unit per loop.
+Have leader clear out stale node state
+- Warn if we are seeing a node with a recent observed-state but that shouldn't be in the cluster
+
+Nodes should ping one another so they can determine if etcd/DDB is down. If all nodes can be contacted, then continue as usual (sans leader elections). Especially important for primary. If primary can still contact a majority of replicas, then don't step down. If it can't, then step down.
+
+DynamoDB backend (just abstract common bits from etcd backend)
 
 Physical vs logical replication
 - "Physical replication group" is standard HA setup (1 primary, 1+ replicas).
