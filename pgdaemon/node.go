@@ -6,6 +6,8 @@ import (
 	"log"
 	"slices"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // nodeReconcilerLoop runs the node reconciler, which fetches the spec
@@ -32,6 +34,8 @@ func nodeReconcilerLoop(ctx context.Context, store StateStore, conf config, pgNo
 
 func storeNodeStatus(ctx context.Context, store StateStore, pgNode *PostgresNode) error {
 	var status NodeStatus
+	status.StatusUuid = uuid.New()
+
 	pgState, err := pgNode.FetchState()
 	if err != nil {
 		log.Printf("Failed to fetch Postgres node state: %v", err)

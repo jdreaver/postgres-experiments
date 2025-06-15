@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"pgdaemon/election"
+
+	"github.com/google/uuid"
 )
 
 type StateStore interface {
@@ -28,6 +30,9 @@ type ClusterSpec struct {
 
 // NodeDesiredState defines the desired state for a node.
 type NodeStatus struct {
+	// StatusUuid is a unique identifier for this status so nodes
+	// can detect if another node has written a newer status.
+	StatusUuid        uuid.UUID              `json:"status_uuid"`
 	Error             *string                `json:"error,omitempty"`
 	NodeTime          string                 `json:"node_time"`
 	IsPrimary         bool                   `json:"is_primary"`
