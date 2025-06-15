@@ -75,7 +75,7 @@ func performNodeTasks(ctx context.Context, store StateStore, conf config, pgNode
 		return fmt.Errorf("Failed to fetch node spec: %w", err)
 	}
 
-	spec := state.spec
+	spec := state.Spec
 	log.Printf("Cluster spec for %s: %+v", conf.nodeName, spec)
 
 	if spec.PrimaryName == conf.nodeName {

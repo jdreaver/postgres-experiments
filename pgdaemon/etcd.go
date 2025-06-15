@@ -154,10 +154,10 @@ func (etcd *EtcdBackend) FetchClusterState(ctx context.Context) (*ClusterState, 
 	}
 
 	var state ClusterState
-	state.nodes = make(map[string]*NodeStatus)
+	state.Nodes = make(map[string]*NodeStatus)
 	for _, kv := range resp.Kvs {
 		if string(kv.Key) == etcd.clusterSpecPrefix() {
-			if err := json.Unmarshal(kv.Value, &state.spec); err != nil {
+			if err := json.Unmarshal(kv.Value, &state.Spec); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal cluster spec: %w", err)
 			}
 		} else if strings.HasPrefix(string(kv.Key), etcd.nodeStatusesPrefix()) {
@@ -166,7 +166,7 @@ func (etcd *EtcdBackend) FetchClusterState(ctx context.Context) (*ClusterState, 
 			if err := json.Unmarshal(kv.Value, &nodeStatus); err != nil {
 				return nil, fmt.Errorf("failed to unmarshal node status for %s: %w", nodeName, err)
 			}
-			state.nodes[nodeName] = &nodeStatus
+			state.Nodes[nodeName] = &nodeStatus
 		} else if strings.HasPrefix(string(kv.Key), etcd.electionPrefix()) {
 			// Ignore election keys in cluster state
 		} else {

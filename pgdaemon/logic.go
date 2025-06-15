@@ -16,8 +16,8 @@ type StateStore interface {
 
 // ClusterState holds the entire state of the cluster.
 type ClusterState struct {
-	spec  *ClusterSpec
-	nodes map[string]*NodeStatus
+	Spec  *ClusterSpec           `json:"spec"`
+	Nodes map[string]*NodeStatus `json:"nodes"`
 }
 
 // ClusterSpec defines the desired state of the cluster.

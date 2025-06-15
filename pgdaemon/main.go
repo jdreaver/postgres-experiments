@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -42,6 +43,8 @@ func main() {
 	switch conf.command {
 	case "set-cluster-spec":
 		setClusterSpec(ctx, store, conf)
+	case "show-cluster":
+		showCluster(ctx, store)
 	case "daemon":
 		daemon(ctx, store, conf, pgNode)
 	default:
@@ -60,6 +63,19 @@ func setClusterSpec(ctx context.Context, store StateStore, conf config) {
 	if err := store.SetClusterSpec(ctx, &spec); err != nil {
 		log.Fatalf("Failed to set cluster spec: %v", err)
 	}
+}
+
+func showCluster(ctx context.Context, store StateStore) {
+	state, err := store.FetchClusterState(ctx)
+	if err != nil {
+		log.Fatalf("Failed to fetch cluster state: %v", err)
+	}
+
+	jsonBytes, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		log.Fatalf("Failed to convert cluster state to JSON: %v", err)
+	}
+	fmt.Println(string(jsonBytes))
 }
 
 func daemon(ctx context.Context, store StateStore, conf config, pgNode *PostgresNode) {
