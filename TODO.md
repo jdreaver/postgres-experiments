@@ -11,6 +11,9 @@ Failover plan:
   - Have replicas wait until new primary is reporting as a primary before trying to connect to it
   - Be more careful with terminating walreceiver. Maybe detect if we have to and only do it if necessary (investigate when this is necessary)
 - Read node state, making distinction between "can't connect to node" and "failed to run query"
+- Don't use -R option of `pg_basebackup`. Write out `primary_conninfo` manually and make standby.signal.
+  - This is easier to configure and _reconfigure_ when the primary changes. Use this for changing `primary_conninfo` as well instead of `ALTER SYSTEM`
+  - Consider having a `postgresql-pgdaemon.conf` that gets `include`ed (with `include_if_exists` or do e.g. `include_dir 'postgresql.conf.d/'`)
 
 Replication settings:
 - Consider using replication slots
@@ -26,7 +29,6 @@ Testing:
 - Property tests that run "actions" sorted by time for leader election. Assert we have at most one leader at a time (no more than one node _thinks_ they are leader)
 
 Rethink PGDATA initialization: it would be nice to not have pgdaemon do so much of this (setting params and stuff). Maybe specify `-primary-init-script` and `-replica-init-script` args and put our logic in there. pgdaemon can just set relevant env vars for the replica script. Or we can just specify "extra config".
-- Also consider having a `postgresql-pgdaemon.conf` that gets `include`ed (with `include_if_exists` or do e.g. `include_dir 'postgresql.conf.d/'`)
 
 Failover:
 - Plan and refactors:
@@ -46,6 +48,10 @@ Failover:
 - Automated failover based on health signals
   - If the primary loses a connection to the majority of replicas, it should step down (network partition)
   - If a majority of secondaries agree they cannot connect to the primary, a new primary should be nominated (could be dead primary, could be network partition)
+
+Use a replication slot per replica so we don't lose WAL https://www.postgresql.org/docs/current/warm-standby.html#STREAMING-REPLICATION-SLOTS
+- It might actually be nice for replicas to be able to check that the slot is ready before trying to boot.
+- If we do this, then maybe lower `wal_keep_size`?
 
 Use postgres system identifier to identify the cluster https://pgpedia.info/d/database-system-identifier.html
 - All nodes should share this identifier. Find a way to abort if a local node's identifier is different (except before it tries to join the cluster)

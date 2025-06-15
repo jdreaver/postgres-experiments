@@ -295,7 +295,6 @@ work_mem = 64MB
 maintenance_work_mem = 2GB
 
 # Store more WAL so replicas can catch up and we can pg_rewind
-max_wal_size = 2GB
 wal_keep_size = 2GB
 
 # Support pg_rewind
