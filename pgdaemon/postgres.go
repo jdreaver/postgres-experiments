@@ -78,8 +78,8 @@ type PostgresPgStatReplica struct {
 	WriteLag       *string
 	FlushLag       *string
 	ReplayLag      *string
-	SyncState      string
-	ReplyTime      string
+	SyncState      *string
+	ReplyTime      *string
 }
 
 type PgStatWalReceiver struct {
