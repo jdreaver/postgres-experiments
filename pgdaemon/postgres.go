@@ -139,7 +139,7 @@ func configureAsReplica(ctx context.Context, host string, port int, primaryHost 
 
 		// TODO: Ensure postgres is not running
 
-		cmd := exec.Command("pg_basebackup", "-h", primaryHost, "-p", fmt.Sprintf("%d", primaryPort), "-U", user, "-D", pgDataDir, "-R", "-P")
+		cmd := exec.Command("pg_basebackup", "-h", primaryHost, "-p", fmt.Sprintf("%d", primaryPort), "-U", user, "-D", pgDataDir, "--progress")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
@@ -159,6 +159,40 @@ func configureAsReplica(ctx context.Context, host string, port int, primaryHost 
 		}
 	}
 
+	// Check conninfo to see if we need to change it
+	conninfoPath := pgDataDir + "/postgresql.conf.d/primary_conninfo.conf"
+	currentConninfo, err := os.ReadFile(conninfoPath)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to read primary_conninfo.conf: %w", err)
+	}
+
+	expectedConninfo := fmt.Appendf(nil, "primary_conninfo = 'host=%s port=%d user=%s'", primaryHost, primaryPort, user)
+	if string(currentConninfo) != string(expectedConninfo) {
+		log.Printf("Primary connection info is %s, changing to %s", currentConninfo, expectedConninfo)
+
+		if err := os.WriteFile(conninfoPath, expectedConninfo, 0644); err != nil {
+			return fmt.Errorf("failed to write primary_conninfo.conf: %w", err)
+		}
+
+		// TODO: Call systemctl reload postgresql.service if running
+		if err := systemctlCommandIfRunning("reload", postgresSystemdUnit); err != nil {
+			return fmt.Errorf("failed to reload Postgres service: %w", err)
+		}
+
+		// TODO: Kill walreceiver processes to force a reconnect.
+		// TODO: Make this more robust? What if primary_conninfo was
+		// properly set but we failed before this line. We might
+		// never restart walreceiver.
+		log.Printf("Killing walreceiver processes to force reconnect to primary %s", primaryHost)
+		cmd := exec.Command("pkill", "-f", "walreceiver")
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			// TODO: What if the error is that we couldn't kill the walreciever process?
+			log.Printf("Failed to kill walreceiver processes, might not have been running: %v", err)
+		}
+	}
+
 	if err := ensurePostgresRunning(); err != nil {
 		return fmt.Errorf("Failed to ensure Postgres is running: %w", err)
 	}
@@ -170,33 +204,6 @@ func configureAsReplica(ctx context.Context, host string, port int, primaryHost 
 		return fmt.Errorf("failed to connect to Postgres: %w", err)
 	}
 	defer conn.Close(ctx)
-
-	// Fetch conninfo to see if we need to change it
-	var currentConninfo string
-	if err := conn.QueryRow(ctx, "SHOW primary_conninfo").Scan(&currentConninfo); err != nil {
-		return fmt.Errorf("failed to get current primary_conninfo: %w", err)
-	}
-
-	expectedConninfo := fmt.Sprintf("host=%s port=%d user=%s", primaryHost, primaryPort, user)
-
-	if currentConninfo != expectedConninfo {
-		log.Printf("Primary connection info is %s, changing to %s", currentConninfo, expectedConninfo)
-
-		query := fmt.Sprintf("ALTER SYSTEM SET primary_conninfo = '%s'", expectedConninfo)
-		if _, err := conn.Exec(ctx, query); err != nil {
-			return fmt.Errorf("failed to set primary_conninfo: %w", err)
-		}
-		if _, err := conn.Exec(ctx, "SELECT pg_reload_conf()"); err != nil {
-			return fmt.Errorf("failed to reload Postgres configuration: %w", err)
-		}
-
-		// Kill walreceiver to force a reconnect TODO: Make this more
-		// robust? What if primary_conninfo was properly set but we
-		// failed before this line. We might never restart walreceiver.
-		if _, err := conn.Exec(ctx, "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = 'walreceiver'"); err != nil {
-			return fmt.Errorf("failed to terminate walreceiver: %w", err)
-		}
-	}
 
 	var isInRecovery bool
 	if err := conn.QueryRow(ctx, "SELECT pg_is_in_recovery()").Scan(&isInRecovery); err != nil {
@@ -245,6 +252,12 @@ func configureAsPrimary(ctx context.Context, host string, port int, user string)
 		if err := writePostgresConfFiles(); err != nil {
 			return fmt.Errorf("failed to configure primary database: %w", err)
 		}
+	}
+
+	// Ensure primary_conninfo.conf is nuked
+	conninfoPath := pgDataDir + "/postgresql.conf.d/primary_conninfo.conf"
+	if err := os.Remove(conninfoPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("failed to remove primary_conninfo.conf: %w", err)
 	}
 
 	if err := ensurePostgresRunning(); err != nil {
@@ -347,7 +360,7 @@ const postgresSystemdUnit = "postgresql.service"
 const pgBouncerSystemdUnit = "pgbouncer.service"
 
 func ensurePostgresRunning() error {
-	return ensureSystemdUnitRunning(postgresSystemdUnit)
+	return systemctlCommandIfNotRunning("start", postgresSystemdUnit)
 }
 
 func stopPostgres() error {
@@ -355,18 +368,27 @@ func stopPostgres() error {
 }
 
 func ensurePgBouncerRunning() error {
-	return ensureSystemdUnitRunning(pgBouncerSystemdUnit)
+	return systemctlCommandIfNotRunning("start", pgBouncerSystemdUnit)
 }
 
-func ensureSystemdUnitRunning(name string) error {
-	// TODO: We should be able to surmise whether or not we need to
-	// do this based on the state we fetch about the node. If we
-	// can't connect, we should check if postgres/pgbouncer is
-	// running, and cache that result.
+func systemctlCommandIfRunning(command string, name string) error {
 	cmd := exec.Command("systemctl", "is-active", "--quiet", name)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
 	if err := cmd.Run(); err != nil {
-		log.Printf("%s might not not running, attempting to start it", name)
-		return runSystemctl("start", name)
+		return nil
+	}
+	return runSystemctl(command, name)
+}
+
+func systemctlCommandIfNotRunning(command string, name string) error {
+	cmd := exec.Command("systemctl", "is-active", "--quiet", name)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return runSystemctl(command, name)
 	}
 
 	return nil

@@ -11,9 +11,6 @@ Failover plan:
   - Have replicas wait until new primary is reporting as a primary before trying to connect to it
   - Be more careful with terminating walreceiver. Maybe detect if we have to and only do it if necessary (investigate when this is necessary)
 - Read node state, making distinction between "can't connect to node" and "failed to run query"
-- Don't use -R option of `pg_basebackup`. Write out `primary_conninfo` manually and make standby.signal.
-  - This is easier to configure and _reconfigure_ when the primary changes. Use this for changing `primary_conninfo` as well instead of `ALTER SYSTEM`
-  - Consider having a `postgresql-pgdaemon.conf` that gets `include`ed (with `include_if_exists` or do e.g. `include_dir 'postgresql.conf.d/'`)
 
 Replication settings:
 - Consider using replication slots
