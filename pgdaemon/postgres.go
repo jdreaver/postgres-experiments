@@ -147,9 +147,7 @@ func configureAsReplica(ctx context.Context, host string, port int, primaryHost 
 			return fmt.Errorf("failed to initialize replica database: %w", err)
 		}
 
-		if err := commonPostgresConfig(); err != nil {
-			return fmt.Errorf("failed to configure replica database: %w", err)
-		}
+		// N.B. pg_basebackup copies all .conf files as well
 	}
 
 	// Ensure standby.signal exists
@@ -244,7 +242,7 @@ func configureAsPrimary(ctx context.Context, host string, port int, user string)
 			return fmt.Errorf("failed to initialize primary database: %w", err)
 		}
 
-		if err := commonPostgresConfig(); err != nil {
+		if err := writePostgresConfFiles(); err != nil {
 			return fmt.Errorf("failed to configure primary database: %w", err)
 		}
 	}
@@ -277,11 +275,10 @@ func configureAsPrimary(ctx context.Context, host string, port int, user string)
 	return nil
 }
 
-// TODO: Specify this stuff in a config file. Or, move database
+// TODO: Specify some of this stuff in a config file. Or, move database
 // initialization entirely out of pgdaemon somehow and assume PGDATA
 // exists?
-func commonPostgresConfig() error {
-	err := appendToFile(pgDataDir+"/postgresql.conf", `
+const pgdaemonConfContent = `
 # Bind to all interfaces
 listen_addresses = '*'
 
@@ -302,20 +299,30 @@ wal_log_hints = on
 
 # Support logical replication
 wal_level = logical
-`)
+`
 
-	if err != nil {
-		return fmt.Errorf("Failed to append to postgresql.conf: %w", err)
-	}
-
-	err = appendToFile(pgDataDir+"/pg_hba.conf", `
+const hbaConfContent = `
 # Allow connections from all hosts, without password
 host    all             all             0.0.0.0/0            trust
 
 # Allow replication from all hosts
 host    replication     all             0.0.0.0/0            trust
-`)
-	if err != nil {
+`
+
+func writePostgresConfFiles() error {
+	if err := appendToFile(pgDataDir+"/postgresql.conf", "include_dir 'postgresql.conf.d'"); err != nil {
+		return fmt.Errorf("Failed to append to postgresql.conf: %w", err)
+	}
+
+	if err := os.MkdirAll(pgDataDir+"/postgresql.conf.d", 0755); err != nil {
+		return fmt.Errorf("Failed to create postgresql.conf.d directory: %w", err)
+	}
+
+	if err := os.WriteFile(pgDataDir+"/postgresql.conf.d/pgdaemon.conf", []byte(pgdaemonConfContent), 0644); err != nil {
+		return fmt.Errorf("Failed to write pgdaemon.conf: %w", err)
+	}
+
+	if err := appendToFile(pgDataDir+"/pg_hba.conf", hbaConfContent); err != nil {
 		return fmt.Errorf("Failed to append to pg_hba.conf: %w", err)
 	}
 
