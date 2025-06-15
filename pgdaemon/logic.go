@@ -32,9 +32,15 @@ type ClusterSpec struct {
 type NodeStatus struct {
 	// StatusUuid is a unique identifier for this status so nodes
 	// can detect if another node has written a newer status.
-	StatusUuid        uuid.UUID              `json:"status_uuid"`
+	StatusUuid uuid.UUID `json:"status_uuid"`
+
+	// NodeTime is the current time, as reported by the node. This
+	// is purely for informational purposes to aid humans in
+	// debugging. Only local, monotonic clocks are used for business
+	// logic.
+	NodeTime string `json:"node_time"`
+
 	Error             *string                `json:"error,omitempty"`
-	NodeTime          string                 `json:"node_time"`
 	IsPrimary         bool                   `json:"is_primary"`
 	Replicas          []NodeReplicas         `json:"replicas,omitempty"`
 	ReplicationStatus *NodeReplicationStatus `json:"replication_status,omitempty"`
