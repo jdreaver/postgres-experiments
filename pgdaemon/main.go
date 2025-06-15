@@ -34,11 +34,16 @@ func main() {
 		log.Fatalf("Failed to create election: %v", err)
 	}
 
+	pgNode, err := NewPostgresNode(conf.postgresHost, conf.postgresPort, conf.postgresUser, conf.pgBouncerHost, conf.pgBouncerPort)
+	if err != nil {
+		log.Fatalf("Failed to create Postgres node: %v", err)
+	}
+
 	switch conf.command {
 	case "init-cluster":
 		initCluster(ctx, store, conf)
 	case "daemon":
-		daemon(ctx, store, conf)
+		daemon(ctx, store, conf, pgNode)
 	default:
 		flag.Usage()
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", conf.command)
@@ -58,7 +63,7 @@ func initCluster(ctx context.Context, store StateStore, conf config) {
 	}
 }
 
-func daemon(ctx context.Context, store StateStore, conf config) {
+func daemon(ctx context.Context, store StateStore, conf config, pgNode *PostgresNode) {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
@@ -66,11 +71,11 @@ func daemon(ctx context.Context, store StateStore, conf config) {
 	})
 
 	g.Go(func() error {
-		return nodeReconcilerLoop(ctx, store, conf)
+		return nodeReconcilerLoop(ctx, store, conf, pgNode)
 	})
 
 	g.Go(func() error {
-		return runHealthCheckServer(ctx, conf)
+		return runHealthCheckServer(ctx, conf, pgNode)
 	})
 
 	if err := g.Wait(); err != nil && err != http.ErrServerClosed {

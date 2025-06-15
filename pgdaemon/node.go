@@ -10,7 +10,7 @@ import (
 
 // nodeReconcilerLoop runs the node reconciler, which fetches the spec
 // and status of the current node and performs tasks to reconcile them.
-func nodeReconcilerLoop(ctx context.Context, store StateStore, conf config) error {
+func nodeReconcilerLoop(ctx context.Context, store StateStore, conf config, pgNode *PostgresNode) error {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
@@ -19,20 +19,20 @@ func nodeReconcilerLoop(ctx context.Context, store StateStore, conf config) erro
 		case <-ctx.Done():
 			return fmt.Errorf("returning ctx.Done() error in node reconciler loop: %w", ctx.Err())
 		case <-ticker.C:
-			if err := storeNodeStatus(ctx, store, conf); err != nil {
+			if err := storeNodeStatus(ctx, store, pgNode); err != nil {
 				log.Printf("Failed to store node status: %v", err)
 			}
 
-			if err := performNodeTasks(ctx, store, conf); err != nil {
+			if err := performNodeTasks(ctx, store, conf, pgNode); err != nil {
 				log.Printf("Failed to perform node tasks: %v", err)
 			}
 		}
 	}
 }
 
-func storeNodeStatus(ctx context.Context, store StateStore, conf config) error {
+func storeNodeStatus(ctx context.Context, store StateStore, pgNode *PostgresNode) error {
 	var status NodeStatus
-	pgState, err := fetchPostgresNodeState(conf.postgresHost, conf.postgresPort, conf.postgresUser, 500*time.Millisecond)
+	pgState, err := pgNode.FetchState()
 	if err != nil {
 		log.Printf("Failed to fetch Postgres node state: %v", err)
 		errStr := err.Error()
@@ -69,7 +69,7 @@ func storeNodeStatus(ctx context.Context, store StateStore, conf config) error {
 	return nil
 }
 
-func performNodeTasks(ctx context.Context, store StateStore, conf config) error {
+func performNodeTasks(ctx context.Context, store StateStore, conf config, pgNode *PostgresNode) error {
 	spec, err := store.FetchClusterSpec(ctx)
 	if err != nil {
 		return fmt.Errorf("Failed to fetch node spec: %w", err)
@@ -78,11 +78,11 @@ func performNodeTasks(ctx context.Context, store StateStore, conf config) error 
 	log.Printf("Cluster spec for %s: %+v", conf.nodeName, spec)
 
 	if spec.PrimaryName == conf.nodeName {
-		if err := configureAsPrimary(ctx, conf.postgresHost, conf.postgresPort, conf.postgresUser); err != nil {
+		if err := pgNode.ConfigureAsPrimary(ctx); err != nil {
 			return fmt.Errorf("Failed to configure as primary: %w", err)
 		}
 	} else if slices.Contains(spec.ReplicaNames, conf.nodeName) {
-		if err := configureAsReplica(ctx, conf.postgresHost, conf.postgresPort, spec.PrimaryName, conf.postgresPort, conf.postgresUser); err != nil {
+		if err := pgNode.ConfigureAsReplica(ctx, spec.PrimaryName, conf.postgresPort, conf.postgresUser); err != nil {
 			return fmt.Errorf("Failed to configure as replica: %w", err)
 		}
 	} else {

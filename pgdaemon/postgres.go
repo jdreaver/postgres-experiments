@@ -9,18 +9,54 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func connectPostgres(ctx context.Context, host string, port int, user string) (*pgx.Conn, error) {
+type PostgresNode struct {
+	pool          *pgxpool.Pool
+	pgBouncerPool *pgxpool.Pool
+}
+
+func NewPostgresNode(host string, port int, user string, pgBouncerHost string, pgBouncerPort int) (*PostgresNode, error) {
+	if host == "" || port <= 0 || user == "" {
+		return nil, fmt.Errorf("invalid Postgres connection parameters: host=%s, port=%d, user=%s", host, port, user)
+	}
+
+	pool, err := connectPostgresPool(host, port, user)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Postgres: %w", err)
+	}
+
+	pgBouncerPool, err := connectPostgresPool(pgBouncerHost, pgBouncerPort, user)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Postgres: %w", err)
+	}
+
+	log.Printf("Connected to Postgres at %s:%d as user %s", host, port, user)
+	return &PostgresNode{
+		pool:          pool,
+		pgBouncerPool: pgBouncerPool,
+	}, nil
+}
+
+const maxPoolSize = 3
+const poolIdleTime = 10 * time.Second
+const localQueryTimeout = 200 * time.Millisecond
+
+func connectPostgresPool(host string, port int, user string) (*pgxpool.Pool, error) {
 	// N.B. default_query_exec_mode=exec because the default uses
 	// statement caching, which doesn't work with pgbouncer.
-	dsn := fmt.Sprintf("postgres://%s@%s:%d/?sslmode=disable&default_query_exec_mode=exec", user, host, port)
-	conn, err := pgx.Connect(ctx, dsn)
+	connStr := fmt.Sprintf("host=%s port=%d user=%s sslmode=disable default_query_exec_mode=exec pool_max_conns=%d pool_max_conn_idle_time=%s", host, port, user, maxPoolSize, poolIdleTime)
+	config, err := pgxpool.ParseConfig(connStr)
 	if err != nil {
-		return nil, fmt.Errorf("pgx connect error: %w", err)
+		return nil, fmt.Errorf("pgx parse config error: %w", err)
 	}
-	return conn, nil
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	if err != nil {
+		return nil, fmt.Errorf("pgxpool connect error: %w", err)
+	}
+	return pool, nil
 }
 
 type PostgresNodeState struct {
@@ -55,23 +91,17 @@ type PgStatWalReceiver struct {
 	FlushedLsn      *string
 }
 
-func fetchPostgresNodeState(host string, port int, user string, connTimeout time.Duration) (*PostgresNodeState, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), connTimeout)
+func (p *PostgresNode) FetchState() (*PostgresNodeState, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), localQueryTimeout)
 	defer cancel()
 
-	conn, err := connectPostgres(ctx, host, port, user)
-	if err != nil {
-		return nil, fmt.Errorf("connect to Postgres: %w", err)
-	}
-	defer conn.Close(ctx)
-
 	var state PostgresNodeState
-	if err := conn.QueryRow(ctx, "SELECT now(), NOT pg_is_in_recovery()").Scan(&state.NodeTime, &state.IsPrimary); err != nil {
+	if err := p.pool.QueryRow(ctx, "SELECT now(), NOT pg_is_in_recovery()").Scan(&state.NodeTime, &state.IsPrimary); err != nil {
 		return nil, fmt.Errorf("check pg_is_in_recovery: %w", err)
 	}
 
 	if state.IsPrimary {
-		rows, err := conn.Query(ctx, `
+		rows, err := p.pool.Query(ctx, `
 			SELECT client_hostname, client_addr, client_port, state, sent_lsn,
 			       write_lsn, flush_lsn, replay_lsn, write_lag, flush_lag,
 			       replay_lag, sync_state, reply_time
@@ -98,7 +128,7 @@ func fetchPostgresNodeState(host string, port int, user string, connTimeout time
 	}
 
 	var receiver PgStatWalReceiver
-	if err := conn.QueryRow(ctx, `
+	if err := p.pool.QueryRow(ctx, `
 		SELECT sender_host, sender_port, status,
 		       receive_start_lsn, written_lsn, flushed_lsn
 		FROM pg_stat_wal_receiver`,
@@ -112,18 +142,12 @@ func fetchPostgresNodeState(host string, port int, user string, connTimeout time
 	return &state, nil
 }
 
-func checkIsPrimary(host string, port int, user string, connTimeout time.Duration) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), connTimeout)
+func CheckIsPrimary(pool *pgxpool.Pool) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), localQueryTimeout)
 	defer cancel()
 
-	conn, err := connectPostgres(ctx, host, port, user)
-	if err != nil {
-		return false, fmt.Errorf("failed to connect to Postgres: %w", err)
-	}
-	defer conn.Close(ctx)
-
 	var isPrimary bool
-	if err := conn.QueryRow(ctx, "SELECT NOT pg_is_in_recovery()").Scan(&isPrimary); err != nil {
+	if err := pool.QueryRow(ctx, "SELECT NOT pg_is_in_recovery()").Scan(&isPrimary); err != nil {
 		return false, fmt.Errorf("check pg_is_in_recovery: %w", err)
 	}
 
@@ -133,7 +157,7 @@ func checkIsPrimary(host string, port int, user string, connTimeout time.Duratio
 const pgDataDir = "/var/lib/postgres/data"
 const pgVersionFile = pgDataDir + "/PG_VERSION"
 
-func configureAsReplica(ctx context.Context, host string, port int, primaryHost string, primaryPort int, user string) error {
+func (p *PostgresNode) ConfigureAsReplica(ctx context.Context, primaryHost string, primaryPort int, user string) error {
 	if _, err := os.Stat(pgVersionFile); errors.Is(err, os.ErrNotExist) {
 		log.Printf("Initializing replica for primary %s database in %s", primaryHost, pgDataDir)
 
@@ -199,14 +223,8 @@ func configureAsReplica(ctx context.Context, host string, port int, primaryHost 
 
 	// Check if pg_is_in_recovery() is false. If so, we need
 	// to point to new primary and become a replica.
-	conn, err := connectPostgres(ctx, host, port, user)
-	if err != nil {
-		return fmt.Errorf("failed to connect to Postgres: %w", err)
-	}
-	defer conn.Close(ctx)
-
 	var isInRecovery bool
-	if err := conn.QueryRow(ctx, "SELECT pg_is_in_recovery()").Scan(&isInRecovery); err != nil {
+	if err := p.pool.QueryRow(ctx, "SELECT pg_is_in_recovery()").Scan(&isInRecovery); err != nil {
 		return fmt.Errorf("failed to check pg_is_in_recovery: %w", err)
 	}
 	if !isInRecovery {
@@ -235,7 +253,7 @@ func configureAsReplica(ctx context.Context, host string, port int, primaryHost 
 	return nil
 }
 
-func configureAsPrimary(ctx context.Context, host string, port int, user string) error {
+func (p *PostgresNode) ConfigureAsPrimary(ctx context.Context) error {
 	if _, err := os.Stat(pgVersionFile); errors.Is(err, os.ErrNotExist) {
 		log.Printf("Initializing primary database in %s", pgDataDir)
 
@@ -264,14 +282,8 @@ func configureAsPrimary(ctx context.Context, host string, port int, user string)
 		return fmt.Errorf("Failed to ensure Postgres is running: %w", err)
 	}
 
-	conn, err := connectPostgres(ctx, host, port, user)
-	if err != nil {
-		return fmt.Errorf("failed to connect to Postgres: %w", err)
-	}
-	defer conn.Close(ctx)
-
 	var isInRecovery bool
-	if err := conn.QueryRow(ctx, "SELECT pg_is_in_recovery()").Scan(&isInRecovery); err != nil {
+	if err := p.pool.QueryRow(ctx, "SELECT pg_is_in_recovery()").Scan(&isInRecovery); err != nil {
 		return fmt.Errorf("failed to check pg_is_in_recovery: %w", err)
 	}
 	if !isInRecovery {
@@ -280,7 +292,7 @@ func configureAsPrimary(ctx context.Context, host string, port int, user string)
 	}
 
 	// Run pg_promote to become primary
-	if _, err := conn.Exec(ctx, "SELECT pg_promote(wait => true)"); err != nil {
+	if _, err := p.pool.Exec(ctx, "SELECT pg_promote(wait => true)"); err != nil {
 		return fmt.Errorf("failed to promote Postgres to primary: %w", err)
 	}
 	log.Printf("Postgres promoted to primary successfully")
