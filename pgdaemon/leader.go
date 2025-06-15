@@ -41,12 +41,12 @@ func leaderReconcilerLoop(ctx context.Context, store StateStore, conf config) er
 }
 
 func performLeaderTasks(ctx context.Context, store StateStore) error {
-	clusterSpec, err := store.FetchClusterSpec(ctx)
+	state, err := store.FetchClusterState(ctx)
 	if err != nil {
 		return fmt.Errorf("Failed to fetch cluster spec: %w", err)
 	}
 
-	log.Printf("Cluster spec: %+v", clusterSpec)
+	log.Printf("Cluster state: %+v", state)
 
 	return nil
 }

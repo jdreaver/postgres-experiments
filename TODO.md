@@ -2,15 +2,7 @@
 
 Document what I've done so far. Maybe with some nice ASCII art.
 
-Cluster logic:
-- Store entire cluster state as single data structure and fetch at once.
-  - First have node write its current status, and then fetch entire cluster state (so we know current node is up to date)
-
 Failover plan:
-- Remember to try and make this logic pure
-  - I think we are trying to do too much serially in `configureAsPrimary` and `configureAsReplica`. It is okay, and probably more robust, to wait until the next loop iteration to do the next task instead of trying to do it all ASAP.
-    - Alternatively, maybe it is more robust to have an idempotent function that tries to do it all. It can query the primary directly instead of relying on state.
-  - Use the `pg_is_in_recovery()` result from state, and consider also consider caching `SHOW primary_conninfo` (although it is kind of wasteful to do a `SHOW` if we are already connected to a primary successfully)
 - Dirty failover is _too_ dirty. Need a bit of coordination (shut down primary, allow catchup, etc). Seeing too much WAL divergence because of race conditions.
   - Have replicas wait until new primary is reporting as a primary before trying to connect to it
   - Be more careful with terminating walreceiver. Maybe detect if we have to and only do it if necessary (investigate when this is necessary)

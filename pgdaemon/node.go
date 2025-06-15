@@ -70,11 +70,12 @@ func storeNodeStatus(ctx context.Context, store StateStore, pgNode *PostgresNode
 }
 
 func performNodeTasks(ctx context.Context, store StateStore, conf config, pgNode *PostgresNode) error {
-	spec, err := store.FetchClusterSpec(ctx)
+	state, err := store.FetchClusterState(ctx)
 	if err != nil {
 		return fmt.Errorf("Failed to fetch node spec: %w", err)
 	}
 
+	spec := state.spec
 	log.Printf("Cluster spec for %s: %+v", conf.nodeName, spec)
 
 	if spec.PrimaryName == conf.nodeName {

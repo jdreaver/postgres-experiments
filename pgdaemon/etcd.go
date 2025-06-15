@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -43,8 +44,12 @@ func (etcd *EtcdBackend) clusterSpecPrefix() string {
 	return etcd.clusterPrefix() + "/spec"
 }
 
+func (etcd *EtcdBackend) nodeStatusesPrefix() string {
+	return etcd.clusterPrefix() + "/node-statuses"
+}
+
 func (etcd *EtcdBackend) nodeStatusPrefix(nodeName string) string {
-	return etcd.clusterPrefix() + "/node-statuses/" + nodeName
+	return etcd.nodeStatusesPrefix() + "/" + nodeName
 }
 
 func (etcd *EtcdBackend) AtomicCompareAndSwapLease(ctx context.Context, prevRVN *uuid.UUID, newLease election.Lease) (bool, error) {
@@ -138,20 +143,36 @@ func (etcd *EtcdBackend) SetClusterSpec(ctx context.Context, spec *ClusterSpec) 
 	return nil
 }
 
-func (etcd *EtcdBackend) FetchClusterSpec(ctx context.Context) (*ClusterSpec, error) {
-	resp, err := etcd.client.Get(ctx, etcd.clusterSpecPrefix())
+func (etcd *EtcdBackend) FetchClusterState(ctx context.Context) (*ClusterState, error) {
+	resp, err := etcd.client.Get(ctx, etcd.clusterPrefix(), clientv3.WithPrefix())
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch cluster spec: %w", err)
+		return nil, fmt.Errorf("failed to get election key from etcd: %w", err)
 	}
 
 	if len(resp.Kvs) == 0 {
-		return nil, fmt.Errorf("cluster spec not found")
+		return nil, fmt.Errorf("cluster state not found")
 	}
 
-	var spec ClusterSpec
-	if err := json.Unmarshal(resp.Kvs[0].Value, &spec); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal cluster spec: %w", err)
+	var state ClusterState
+	state.nodes = make(map[string]*NodeStatus)
+	for _, kv := range resp.Kvs {
+		if string(kv.Key) == etcd.clusterSpecPrefix() {
+			if err := json.Unmarshal(kv.Value, &state.spec); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal cluster spec: %w", err)
+			}
+		} else if strings.HasPrefix(string(kv.Key), etcd.nodeStatusesPrefix()) {
+			nodeName := strings.TrimPrefix(string(kv.Key), etcd.nodeStatusesPrefix()+"/")
+			var nodeStatus NodeStatus
+			if err := json.Unmarshal(kv.Value, &nodeStatus); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal node status for %s: %w", nodeName, err)
+			}
+			state.nodes[nodeName] = &nodeStatus
+		} else if strings.HasPrefix(string(kv.Key), etcd.electionPrefix()) {
+			// Ignore election keys in cluster state
+		} else {
+			log.Printf("WARNING: Ignoring unexpected key in cluster prefix: %s", kv.Key)
+		}
 	}
 
-	return &spec, nil
+	return &state, nil
 }

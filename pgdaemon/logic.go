@@ -9,9 +9,15 @@ type StateStore interface {
 	election.ElectionBackend
 
 	SetClusterSpec(ctx context.Context, spec *ClusterSpec) error
-	FetchClusterSpec(ctx context.Context) (*ClusterSpec, error)
+	FetchClusterState(ctx context.Context) (*ClusterState, error)
 
 	WriteCurrentNodeStatus(ctx context.Context, status *NodeStatus) error
+}
+
+// ClusterState holds the entire state of the cluster.
+type ClusterState struct {
+	spec  *ClusterSpec
+	nodes map[string]*NodeStatus
 }
 
 // ClusterSpec defines the desired state of the cluster.
