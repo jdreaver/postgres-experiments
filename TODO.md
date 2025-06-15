@@ -1,5 +1,12 @@
 # TODO
 
+Write benchmark program in Go:
+- Use imdb dataset for now
+- MongoDB probably only has one storage format (everything squished in a document), while postgres can either do tables or id/jsonb.
+- Varying number of indexes?
+- Transactions or not in postgres
+- Also measure how much downtime we incur during failover, and how well we can continue on while retrying queries
+
 Document what I've done so far. Maybe with some nice ASCII art.
 
 Failover plan:
