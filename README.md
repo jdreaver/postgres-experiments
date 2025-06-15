@@ -41,6 +41,10 @@ $ etcdctl get '' --prefix --write-out=json | jq '.kvs[] | { key: .key | @base64d
 - https://docs.aws.amazon.com/prescriptive-guidance/latest/migration-databases-postgresql-ec2/ha-postgresql-databases-ec2.html
 - [CrunchyData postgres operator](https://access.crunchydata.com/documentation/postgres-operator/latest)
 
+## Postgres on EC2
+
+- https://docs.aws.amazon.com/whitepapers/latest/optimizing-postgresql-on-ec2-using-ebs/optimizing-postgresql-on-ec2-using-ebs.html
+
 ## Leader Election
 
 AWS/DynamoDB:

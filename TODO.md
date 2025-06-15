@@ -22,6 +22,7 @@ Pure logic (both for election and for state):
 - Using prev/current state, spit out actions to take
 
 Testing:
+- Integration test that performs a couple failovers and postgres queries work (through HAProxy), all nodes are reporting to etcd, all nodes are healthy, replication is working, etc
 - Test `runInner` with mocked backend for leader election
 - Property tests that run "actions" sorted by time for leader election. Assert we have at most one leader at a time (no more than one node _thinks_ they are leader)
 
@@ -115,3 +116,5 @@ Compare replication and replica commit settings apples to apples with Mongo `{w:
 Get this running in AWS
 
 EBS supports atomic writes of up to 16 kB, so we can probably turn off `full_page_writes`. Many instance store SSD volumes also support this.
+
+https://docs.aws.amazon.com/whitepapers/latest/optimizing-postgresql-on-ec2-using-ebs/optimizing-postgresql-on-ec2-using-ebs.html

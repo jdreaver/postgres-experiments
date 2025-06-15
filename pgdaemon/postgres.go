@@ -161,8 +161,6 @@ func (p *PostgresNode) ConfigureAsReplica(ctx context.Context, primaryHost strin
 	if _, err := os.Stat(pgVersionFile); errors.Is(err, os.ErrNotExist) {
 		log.Printf("Initializing replica for primary %s database in %s", primaryHost, pgDataDir)
 
-		// TODO: Ensure postgres is not running
-
 		cmd := exec.Command("pg_basebackup", "-h", primaryHost, "-p", fmt.Sprintf("%d", primaryPort), "-U", user, "-D", pgDataDir, "--progress")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -198,12 +196,12 @@ func (p *PostgresNode) ConfigureAsReplica(ctx context.Context, primaryHost strin
 			return fmt.Errorf("failed to write primary_conninfo.conf: %w", err)
 		}
 
-		// TODO: Call systemctl reload postgresql.service if running
+		// Call systemctl reload postgresql.service if running
 		if err := systemctlCommandIfRunning("reload", postgresSystemdUnit); err != nil {
 			return fmt.Errorf("failed to reload Postgres service: %w", err)
 		}
 
-		// TODO: Kill walreceiver processes to force a reconnect.
+		// Kill walreceiver processes to force a reconnect.
 		// TODO: Make this more robust? What if primary_conninfo was
 		// properly set but we failed before this line. We might
 		// never restart walreceiver.
@@ -256,8 +254,6 @@ func (p *PostgresNode) ConfigureAsReplica(ctx context.Context, primaryHost strin
 func (p *PostgresNode) ConfigureAsPrimary(ctx context.Context) error {
 	if _, err := os.Stat(pgVersionFile); errors.Is(err, os.ErrNotExist) {
 		log.Printf("Initializing primary database in %s", pgDataDir)
-
-		// TODO: Ensure postgres is not running
 
 		cmd := exec.Command("initdb", "--pgdata", pgDataDir)
 		cmd.Stdout = os.Stdout
