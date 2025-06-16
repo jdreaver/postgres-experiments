@@ -142,9 +142,9 @@ func WriteClusterStatusIfChanged(store StateStore, oldStatus ClusterStatus, newS
 	return newStatus, nil
 }
 
-// ClusterStateMachine processes the current cluster state and returns
+// ComputeNewClusterStatus processes the current cluster state and returns
 // the updated cluster status, or nil if no changes are needed.
-func ClusterStateMachine(state ClusterState) ClusterStatus {
+func ComputeNewClusterStatus(state ClusterState) ClusterStatus {
 	status := state.Status
 
 	// Sort node names for consistent ordering

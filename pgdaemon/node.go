@@ -79,7 +79,7 @@ func performNodeTasks(ctx context.Context, store StateStore, conf config, pgNode
 		return fmt.Errorf("Failed to fetch node spec: %w", err)
 	}
 
-	newStatus := ClusterStateMachine(state)
+	newStatus := ComputeNewClusterStatus(state)
 	newStatus, err = WriteClusterStatusIfChanged(store, state.Status, newStatus, conf.nodeName)
 	if err != nil {
 		return fmt.Errorf("Failed to write cluster status: %w", err)
