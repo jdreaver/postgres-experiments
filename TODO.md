@@ -11,11 +11,11 @@ Write benchmark program in Go:
 Document what I've done so far. Maybe with some nice ASCII art.
 
 Failover plan:
-- State machine
-  - Start writing tests for cluster state machine
-  - Declare states like `healthy`, `waiting_for_catchup`, `selecting_new_primary`, `shutting_down_old`, `promoting_new`, `reconfiguring_replicas`, etc
-  - Have a pure function that transitions states
-    - Idea: re-run the function in the same loop over and over until the state stops changing. It is possible we transition through multiple states quickly, like if a replica is already caught up (so no need to wait for catchup, and we can immediately select a replica too)
+- Using ClusterStatus
+  - Start writing tests for this
+  - It doesn't make sense to have a single "state". We should constantly reconcile status with the intended spec from scratch. Instead of a single state, have fields for different concurrent states. For example, we can be unhealthy while doing a failover, etc.
+    - Perhaps a FailoverState specifically makes sense, like `stable`, `waiting_for_replica_catchup`, `selecting_new_primary`, `shutting_down_old_primary`, `promoting_new_primary`, `reconfiguring_replicas`, then `stable` again.
+  - Log all state changes in JSON and make them easy to find.
   - See my TODO below about using UDP packets to inform all other pgdaemons about state changes so they can act now instead of waiting for the next loop
 - Dirty failover is _too_ dirty. Need a bit of coordination (shut down primary, allow catchup, etc). Seeing too much WAL divergence because of race conditions.
   - Have replicas wait until new primary is reporting as a primary before trying to connect to it

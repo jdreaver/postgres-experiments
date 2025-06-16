@@ -30,11 +30,11 @@ type ClusterState struct {
 // ClusterSpec defines the desired state of the cluster.
 type ClusterSpec struct{}
 
-type ClusterStatusState string
+type ClusterHealth string
 
 const (
-	ClusterStatusStateHealthy   ClusterStatusState = "healthy"
-	ClusterStatusStateUnhealthy ClusterStatusState = "unhealthy"
+	ClusterHealthHealthy   ClusterHealth = "healthy"
+	ClusterHealthUnhealthy ClusterHealth = "unhealthy"
 )
 
 // ClusterStatus defines the current status of the cluster.
@@ -55,8 +55,8 @@ type ClusterStatus struct {
 	// informational purposes to aid humans in debugging.
 	SourceNodeTime string `json:"source_node_time,omitempty"`
 
-	State        ClusterStatusState `json:"state"`
-	StateReasons []string           `json:"state_reasons,omitempty"`
+	Health        ClusterHealth `json:"health"`
+	HealthReasons []string      `json:"health_reasons,omitempty"`
 
 	// IntendedPrimary is the node that the cluster has decided
 	// should be the primary, although this may differ from the
@@ -68,15 +68,15 @@ type ClusterStatus struct {
 // clusterStatusChanged checks if any meaningful fields in the cluster
 // status changed (e.g. not the UUID or source node).
 func clusterStatusChanged(old, new ClusterStatus) bool {
-	if old.State != new.State {
+	if old.Health != new.Health {
 		return true
 	}
 
-	if len(old.StateReasons) != len(new.StateReasons) {
+	if len(old.HealthReasons) != len(new.HealthReasons) {
 		return true
 	}
-	for i, reason := range old.StateReasons {
-		if reason != new.StateReasons[i] {
+	for i, reason := range old.HealthReasons {
+		if reason != new.HealthReasons[i] {
 			return true
 		}
 	}
@@ -150,10 +150,10 @@ func clusterStateMachineInner(state ClusterState) (ClusterStatus, error) {
 	status := state.Status
 
 	// Ensure we have some status to start with
-	if status.State == "" {
+	if status.Health == "" {
 		status = ClusterStatus{
-			State:        ClusterStatusStateUnhealthy,
-			StateReasons: []string{"Cluster state is nil or missing status"},
+			Health:        ClusterHealthUnhealthy,
+			HealthReasons: []string{"Cluster state is nil or missing status"},
 		}
 	} else {
 		status = state.Status
@@ -241,11 +241,11 @@ func clusterStateMachineInner(state ClusterState) (ClusterStatus, error) {
 	}
 
 	if !allNodesHealthy {
-		status.State = ClusterStatusStateUnhealthy
-		status.StateReasons = unhealthyReasons
+		status.Health = ClusterHealthUnhealthy
+		status.HealthReasons = unhealthyReasons
 	} else {
-		status.State = ClusterStatusStateHealthy
-		status.StateReasons = []string{}
+		status.Health = ClusterHealthHealthy
+		status.HealthReasons = []string{}
 	}
 
 	return status, nil
