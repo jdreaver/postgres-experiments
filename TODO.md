@@ -22,6 +22,8 @@ Failover plan:
   - Be more careful with terminating walreceiver. Maybe detect if we have to and only do it if necessary (investigate when this is necessary)
 - Read node state, making distinction between "can't connect to node" and "failed to run query"
 
+Mark cluster unhealthy and somehow mark replica as stale if `reply_time` is much lower than `node_time` on primary for a replica. Do this date math inside of postgres. (Or, is `write_lag` sufficient?)
+
 Pure logic (both for election and for state):
 - Add a ton of tests on this logic
 - Store previous spec/status and current spec/status, as well as time diff between them.

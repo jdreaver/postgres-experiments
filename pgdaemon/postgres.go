@@ -201,18 +201,18 @@ func (p *PostgresNode) ConfigureAsReplica(ctx context.Context, primaryHost strin
 			return fmt.Errorf("failed to reload Postgres service: %w", err)
 		}
 
-		// Kill walreceiver processes to force a reconnect.
+		// TODO: Kill walreceiver processes to force a reconnect.
 		// TODO: Make this more robust? What if primary_conninfo was
 		// properly set but we failed before this line. We might
 		// never restart walreceiver.
-		log.Printf("Killing walreceiver processes to force reconnect to primary %s", primaryHost)
-		cmd := exec.Command("pkill", "-f", "walreceiver")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			// TODO: What if the error is that we couldn't kill the walreciever process?
-			log.Printf("Failed to kill walreceiver processes, might not have been running: %v", err)
-		}
+		// log.Printf("Killing walreceiver processes to force reconnect to primary %s", primaryHost)
+		// cmd := exec.Command("pkill", "-f", "walreceiver")
+		// cmd.Stdout = os.Stdout
+		// cmd.Stderr = os.Stderr
+		// if err := cmd.Run(); err != nil {
+		// 	// TODO: What if the error is that we couldn't kill the walreciever process?
+		// 	log.Printf("Failed to kill walreceiver processes, might not have been running: %v", err)
+		// }
 	}
 
 	if err := ensurePostgresRunning(); err != nil {
