@@ -149,16 +149,6 @@ func ClusterStateMachine(state ClusterState, nodeName string) (*ClusterStatus, e
 func clusterStateMachineInner(state ClusterState) (ClusterStatus, error) {
 	status := state.Status
 
-	// Ensure we have some status to start with
-	if status.Health == "" {
-		status = ClusterStatus{
-			Health:        ClusterHealthUnhealthy,
-			HealthReasons: []string{"Cluster state is nil or missing status"},
-		}
-	} else {
-		status = state.Status
-	}
-
 	// Sort node names for consistent ordering
 	var nodeNames []string
 	for nodeName := range state.Nodes {
