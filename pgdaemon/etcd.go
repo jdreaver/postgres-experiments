@@ -44,6 +44,14 @@ func (etcd *EtcdBackend) clusterSpecPrefix() string {
 	return etcd.clusterPrefix() + "/spec"
 }
 
+func (etcd *EtcdBackend) clusterStatusUuidPrefix() string {
+	return etcd.clusterPrefix() + "/status-uuid"
+}
+
+func (etcd *EtcdBackend) clusterStatusPrefix() string {
+	return etcd.clusterPrefix() + "/status"
+}
+
 func (etcd *EtcdBackend) nodeStatusesPrefix() string {
 	return etcd.clusterPrefix() + "/node-statuses"
 }
@@ -110,6 +118,31 @@ func (etcd *EtcdBackend) FetchCurrentLease(ctx context.Context) (*election.Lease
 	return &lease, nil
 }
 
+func (etcd *EtcdBackend) WriteClusterStatus(ctx context.Context, prevStatusUUID uuid.UUID, status ClusterStatus) error {
+	compare := clientv3.Compare(clientv3.CreateRevision(etcd.clusterStatusUuidPrefix()), "=", 0)
+	if prevStatusUUID != uuid.Nil {
+		compare = clientv3.Compare(clientv3.Value(etcd.clusterStatusUuidPrefix()), "=", prevStatusUUID.String())
+	}
+
+	statusBytes, err := json.Marshal(status)
+	if err != nil {
+		return fmt.Errorf("failed to marshal cluster status: %w", err)
+	}
+
+	txn := etcd.client.Txn(ctx)
+	_, err = txn.If(
+		compare,
+	).Then(
+		clientv3.OpPut(etcd.clusterStatusUuidPrefix(), status.StatusUuid.String()),
+		clientv3.OpPut(etcd.clusterStatusPrefix(), string(statusBytes)),
+	).Commit()
+	if err != nil {
+		return fmt.Errorf("failed to commit cluster status transaction: %w", err)
+	}
+
+	return nil
+}
+
 func (etcd *EtcdBackend) WriteCurrentNodeStatus(ctx context.Context, status *NodeStatus) error {
 	statusBytes, err := json.Marshal(status)
 	if err != nil {
@@ -124,17 +157,12 @@ func (etcd *EtcdBackend) WriteCurrentNodeStatus(ctx context.Context, status *Nod
 }
 
 func (etcd *EtcdBackend) SetClusterSpec(ctx context.Context, spec *ClusterSpec) error {
-	if spec.PrimaryName == "" {
-		return fmt.Errorf("primary name cannot be empty")
-	}
-
 	specBytes, err := json.Marshal(spec)
 	if err != nil {
 		return fmt.Errorf("failed to marshal cluster spec: %w", err)
 	}
 
-	_, err = etcd.client.Put(ctx, etcd.clusterSpecPrefix(), string(specBytes))
-	if err != nil {
+	if _, err := etcd.client.Put(ctx, etcd.clusterSpecPrefix(), string(specBytes)); err != nil {
 		return fmt.Errorf("failed to write cluster spec to etcd: %w", err)
 	}
 
@@ -143,28 +171,35 @@ func (etcd *EtcdBackend) SetClusterSpec(ctx context.Context, spec *ClusterSpec) 
 	return nil
 }
 
-func (etcd *EtcdBackend) FetchClusterState(ctx context.Context) (*ClusterState, error) {
+func (etcd *EtcdBackend) FetchClusterState(ctx context.Context) (ClusterState, error) {
+	var state ClusterState
+
 	resp, err := etcd.client.Get(ctx, etcd.clusterPrefix(), clientv3.WithPrefix())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get election key from etcd: %w", err)
+		return state, fmt.Errorf("failed to get election key from etcd: %w", err)
 	}
 
 	if len(resp.Kvs) == 0 {
-		return nil, fmt.Errorf("cluster state not found")
+		return state, fmt.Errorf("cluster state not found")
 	}
 
-	var state ClusterState
 	state.Nodes = make(map[string]*NodeStatus)
 	for _, kv := range resp.Kvs {
 		if string(kv.Key) == etcd.clusterSpecPrefix() {
 			if err := json.Unmarshal(kv.Value, &state.Spec); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal cluster spec: %w", err)
+				return state, fmt.Errorf("failed to unmarshal cluster spec: %w", err)
 			}
+		} else if string(kv.Key) == etcd.clusterStatusPrefix() {
+			if err := json.Unmarshal(kv.Value, &state.Status); err != nil {
+				return state, fmt.Errorf("failed to unmarshal cluster status: %w", err)
+			}
+		} else if string(kv.Key) == etcd.clusterStatusUuidPrefix() {
+			// Ignore status UUID key in cluster state. UUID is embedded in status.
 		} else if strings.HasPrefix(string(kv.Key), etcd.nodeStatusesPrefix()) {
 			nodeName := strings.TrimPrefix(string(kv.Key), etcd.nodeStatusesPrefix()+"/")
 			var nodeStatus NodeStatus
 			if err := json.Unmarshal(kv.Value, &nodeStatus); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal node status for %s: %w", nodeName, err)
+				return state, fmt.Errorf("failed to unmarshal node status for %s: %w", nodeName, err)
 			}
 			state.Nodes[nodeName] = &nodeStatus
 		} else if strings.HasPrefix(string(kv.Key), etcd.electionPrefix()) {
@@ -174,5 +209,5 @@ func (etcd *EtcdBackend) FetchClusterState(ctx context.Context) (*ClusterState, 
 		}
 	}
 
-	return &state, nil
+	return state, nil
 }

@@ -79,15 +79,24 @@ func performNodeTasks(ctx context.Context, store StateStore, conf config, pgNode
 		return fmt.Errorf("Failed to fetch node spec: %w", err)
 	}
 
-	spec := state.Spec
-	log.Printf("Cluster spec for %s: %+v", conf.nodeName, spec)
+	newStatus, err := ClusterStateMachine(state, conf.nodeName)
+	if err != nil {
+		return fmt.Errorf("Failed to process cluster state machine: %w", err)
+	}
+	if newStatus != nil {
+		prevStatusUuid := state.Status.StatusUuid
+		if err := store.WriteClusterStatus(ctx, prevStatusUuid, *newStatus); err != nil {
+			return fmt.Errorf("Failed to write cluster status: %w", err)
+		}
+		state.Status = *newStatus
+	}
 
-	if spec.PrimaryName == conf.nodeName {
+	if state.Status.IntendedPrimary == conf.nodeName {
 		if err := pgNode.ConfigureAsPrimary(ctx); err != nil {
 			return fmt.Errorf("Failed to configure as primary: %w", err)
 		}
-	} else if slices.Contains(spec.ReplicaNames, conf.nodeName) {
-		if err := pgNode.ConfigureAsReplica(ctx, spec.PrimaryName, conf.postgresPort, conf.postgresUser); err != nil {
+	} else if slices.Contains(state.Status.IntendedReplicas, conf.nodeName) {
+		if err := pgNode.ConfigureAsReplica(ctx, state.Status.IntendedPrimary, conf.postgresPort, conf.postgresUser); err != nil {
 			return fmt.Errorf("Failed to configure as replica: %w", err)
 		}
 	} else {

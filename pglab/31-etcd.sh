@@ -59,10 +59,3 @@ EOF
 
     sudo systemd-nspawn -D "$directory" bash /bootstrap.sh
 }
-
-set_cluster_spec() {
-    wait_for_host_tcp etcd0 2379
-
-    echo "Setting cluster spec in etcd0"
-    go run -C pgdaemon . -etcd-host etcd0 -primary-name pg0 -replica-names pg1,pg2 -cluster-name my-cluster set-cluster-spec
-}

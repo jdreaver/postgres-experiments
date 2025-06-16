@@ -1,5 +1,7 @@
 # TODO
 
+Get rid of leader election loop, and make TODO to nuke all leader election code.
+
 Write benchmark program in Go:
 - Use a synthetic dataset.
 - MongoDB probably only has one storage format (everything squished in a document), while postgres can either do tables or id/jsonb.
@@ -11,6 +13,12 @@ Write benchmark program in Go:
 Document what I've done so far. Maybe with some nice ASCII art.
 
 Failover plan:
+- State machine
+  - Prefactor: much of what is currently in the cluster spec should actually be cluster status. Primary and replicas will change over time!
+  - Declare states like `healthy`, `waiting_for_catchup`, `selecting_new_primary`, `shutting_down_old`, `promoting_new`, `reconfiguring_replicas`, etc
+  - Have a pure function that transitions states
+    - Idea: re-run the function in the same loop over and over until the state stops changing. It is possible we transition through multiple states quickly, like if a replica is already caught up (so no need to wait for catchup, and we can immediately select a replica too)
+  - See my TODO below about using UDP packets to inform all other pgdaemons about state changes so they can act now instead of waiting for the next loop
 - Dirty failover is _too_ dirty. Need a bit of coordination (shut down primary, allow catchup, etc). Seeing too much WAL divergence because of race conditions.
   - Have replicas wait until new primary is reporting as a primary before trying to connect to it
   - Be more careful with terminating walreceiver. Maybe detect if we have to and only do it if necessary (investigate when this is necessary)
@@ -30,7 +38,6 @@ Rethink PGDATA initialization: it would be nice to not have pgdaemon do so much 
 
 Failover:
 - Plan and refactors:
-  - Add a "cluster state", not just desired state. Put under `/cluster/observed-state` and move desired state under `/cluster/desired-state`
   - Stop primary writes (but not primary process!) and wait for a secondary to catch up (with timeout) before failing over
   - Detect degradation automatically and fail over
 - First to manual failover where we select new primary with pgdaemon
@@ -45,6 +52,11 @@ Failover:
 - Automated failover based on health signals
   - If the primary loses a connection to the majority of replicas, it should step down (network partition)
   - If a majority of secondaries agree they cannot connect to the primary, a new primary should be nominated (could be dead primary, could be network partition)
+
+Nodes joining cluster:
+- Consider putting timeout on nodes trying to join cluster so they fail if they are never allowed to join.
+- Leader can spit out an Event for rejecting nodes so we have clear logging.
+- Set max number of nodes as config option. This is mainly so misconfiguration doesn't bring cluster down.
 
 Events system:
 - Record important events, either with a well known log line identifier or in etcd/DDB (like the k8s Events API). Things like health check failures, failover starts/ends, manual failover, etc.
@@ -61,11 +73,6 @@ Use postgres system identifier to identify the cluster https://pgpedia.info/d/da
 
 Re-evaluate lease-based leader election. We can't ever guarantee there is only a single leader.
 - Perhaps "leader election" can be atomic compare-and-swaps for deciding cluster state, without needing a single leader that holds a lease. Each node can evaluate its state of the world and attempt to atomically write desired cluster state. The desired cluster state could itself be the "lease" (e.g. don't attempt to change state until lease expires, but no node "holds" the lease)
-
-Allow nodes to join cluster without needing to seed state. Nodes can add some sort of indicator in their status that they want to join the cluster. The leader can accept or reject and the node will know on its next loop.
-- We can set a max number of nodes as config option. This is mainly so misconfiguration doesn't bring cluster down.
-- Consider putting timeout on nodes trying to join cluster so they fail if they are never allowed to join.
-- Leader can spit out an Event for rejecting nodes so we have clear logging.
 
 TLA+ or Quint to model out leader election in isolation and leader election + failover
 - https://learntla.com/

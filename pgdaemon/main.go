@@ -36,8 +36,6 @@ func main() {
 	}
 
 	switch conf.command {
-	case "set-cluster-spec":
-		setClusterSpec(ctx, store, conf)
 	case "show-cluster":
 		showCluster(ctx, store)
 	case "daemon":
@@ -46,17 +44,6 @@ func main() {
 		flag.Usage()
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", conf.command)
 		os.Exit(1)
-	}
-}
-
-func setClusterSpec(ctx context.Context, store StateStore, conf config) {
-	spec := ClusterSpec{
-		PrimaryName:  conf.primaryName,
-		ReplicaNames: conf.replicaNames,
-	}
-
-	if err := store.SetClusterSpec(ctx, &spec); err != nil {
-		log.Fatalf("Failed to set cluster spec: %v", err)
 	}
 }
 
