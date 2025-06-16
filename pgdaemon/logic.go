@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"pgdaemon/election"
+	"reflect"
 	"slices"
 	"time"
 
@@ -113,23 +114,32 @@ func WriteClusterStatusIfChanged(store StateStore, oldStatus ClusterStatus, newS
 // clusterStatusChanged checks if any meaningful fields in the cluster
 // status changed (e.g. not the UUID or source node).
 func clusterStatusChanged(old, new ClusterStatus) bool {
-	return old.Health != new.Health ||
-		!stringSlicesEqual(old.HealthReasons, new.HealthReasons) ||
-		old.IntendedPrimary != new.IntendedPrimary ||
-		!stringSlicesEqual(old.IntendedReplicas, new.IntendedReplicas)
+	// Clear metadata for comparison
+	old.StatusUuid = uuid.UUID{}
+	old.SourceNode = ""
+	old.SourceNodeTime = ""
+
+	new.StatusUuid = uuid.UUID{}
+	new.SourceNode = ""
+	new.SourceNodeTime = ""
+
+	// Normalize all empty slices to nil automatically
+	normalizeSlicesInStruct(reflect.ValueOf(&old).Elem())
+	normalizeSlicesInStruct(reflect.ValueOf(&new).Elem())
+
+	return !reflect.DeepEqual(old, new)
 }
 
-// stringSlicesEqual compares two string slices for equality
-func stringSlicesEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, v := range a {
-		if v != b[i] {
-			return false
+// normalizeSlicesInStruct converts all empty slices to nil using
+// reflection. This is necessary because DeepEqual considers a nil slice
+// and empty slice as not equal.
+func normalizeSlicesInStruct(v reflect.Value) {
+	for i := range v.NumField() {
+		field := v.Field(i)
+		if field.Kind() == reflect.Slice && field.Len() == 0 && !field.IsNil() {
+			field.Set(reflect.Zero(field.Type())) // Set to nil
 		}
 	}
-	return true
 }
 
 // ComputeNewClusterStatus processes the current cluster state and returns
@@ -167,7 +177,11 @@ func ComputeNewClusterStatus(state ClusterState) ClusterStatus {
 			newReplicas = append(newReplicas, nodeName)
 		}
 	}
-	status.IntendedReplicas = newReplicas
+	if len(newReplicas) == 0 {
+		status.IntendedReplicas = nil
+	} else {
+		status.IntendedReplicas = newReplicas
+	}
 
 	// If any node is unhealthy, set the cluster state to unhealthy.
 	// Otherwise, set it to healthy.
@@ -223,7 +237,7 @@ func ComputeNewClusterStatus(state ClusterState) ClusterStatus {
 		status.HealthReasons = unhealthyReasons
 	} else {
 		status.Health = ClusterHealthHealthy
-		status.HealthReasons = []string{}
+		status.HealthReasons = nil
 	}
 
 	return status
