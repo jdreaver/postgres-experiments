@@ -65,38 +65,6 @@ type ClusterStatus struct {
 	IntendedReplicas []string `json:"intended_replicas"`
 }
 
-// clusterStatusChanged checks if any meaningful fields in the cluster
-// status changed (e.g. not the UUID or source node).
-func clusterStatusChanged(old, new ClusterStatus) bool {
-	if old.Health != new.Health {
-		return true
-	}
-
-	if len(old.HealthReasons) != len(new.HealthReasons) {
-		return true
-	}
-	for i, reason := range old.HealthReasons {
-		if reason != new.HealthReasons[i] {
-			return true
-		}
-	}
-
-	if old.IntendedPrimary != new.IntendedPrimary {
-		return true
-	}
-
-	if len(old.IntendedReplicas) != len(new.IntendedReplicas) {
-		return true
-	}
-	for i, replica := range old.IntendedReplicas {
-		if replica != new.IntendedReplicas[i] {
-			return true
-		}
-	}
-
-	return false
-}
-
 // NodeDesiredState defines the desired state for a node.
 type NodeStatus struct {
 	// StatusUuid is a unique identifier for this status so nodes
@@ -140,6 +108,28 @@ func WriteClusterStatusIfChanged(store StateStore, oldStatus ClusterStatus, newS
 		}
 	}
 	return newStatus, nil
+}
+
+// clusterStatusChanged checks if any meaningful fields in the cluster
+// status changed (e.g. not the UUID or source node).
+func clusterStatusChanged(old, new ClusterStatus) bool {
+	return old.Health != new.Health ||
+		!stringSlicesEqual(old.HealthReasons, new.HealthReasons) ||
+		old.IntendedPrimary != new.IntendedPrimary ||
+		!stringSlicesEqual(old.IntendedReplicas, new.IntendedReplicas)
+}
+
+// stringSlicesEqual compares two string slices for equality
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // ComputeNewClusterStatus processes the current cluster state and returns
