@@ -132,10 +132,21 @@ type NodeReplicationStatus struct {
 
 // ClusterStateMachine processes the current cluster state and returns the updated cluster status, or nil if no changes are needed.
 func ClusterStateMachine(state ClusterState, nodeName string) (*ClusterStatus, error) {
-	return clusterStateMachineInner(state, nodeName, uuid.New, time.Now)
+	newStatus, err := clusterStateMachineInner(state)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process cluster state machine: %w", err)
+	}
+
+	if clusterStatusChanged(state.Status, newStatus) {
+		newStatus.StatusUuid = uuid.New()
+		newStatus.SourceNode = nodeName
+		newStatus.SourceNodeTime = time.Now().Format(time.RFC3339)
+		return &newStatus, nil
+	}
+	return nil, nil
 }
 
-func clusterStateMachineInner(state ClusterState, nodeName string, makeUuid func() uuid.UUID, makeNow func() time.Time) (*ClusterStatus, error) {
+func clusterStateMachineInner(state ClusterState) (ClusterStatus, error) {
 	status := state.Status
 
 	// Ensure we have some status to start with
@@ -201,10 +212,16 @@ func clusterStateMachineInner(state ClusterState, nodeName string, makeUuid func
 				reason := fmt.Sprintf("Node %s is marked as primary but not intended primary", nodeName)
 				unhealthyReasons = append(unhealthyReasons, reason)
 			}
-			// Check if there should be replicas
-			if len(nodeStatus.Replicas) == 0 && len(status.IntendedReplicas) > 0 {
+			// Check replica statuses match.
+			// TODO: Check that the actual names match too!
+			if len(nodeStatus.Replicas) != len(status.IntendedReplicas) {
 				allNodesHealthy = false
-				reason := fmt.Sprintf("Node %s has no replication status but there are %d intended replicas", nodeName, len(status.IntendedReplicas))
+				reason := fmt.Sprintf(
+					"Node %s has %d replica statuses but there are %d intended replicas",
+					nodeName,
+					len(nodeStatus.Replicas),
+					len(status.IntendedReplicas),
+				)
 				unhealthyReasons = append(unhealthyReasons, reason)
 			}
 		} else {
@@ -231,11 +248,5 @@ func clusterStateMachineInner(state ClusterState, nodeName string, makeUuid func
 		status.StateReasons = []string{}
 	}
 
-	if clusterStatusChanged(state.Status, status) {
-		status.StatusUuid = makeUuid()
-		status.SourceNode = nodeName
-		status.SourceNodeTime = makeNow().Format(time.RFC3339)
-		return &status, nil
-	}
-	return nil, nil
+	return status, nil
 }

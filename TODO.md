@@ -93,7 +93,7 @@ Investigate why inserting imdb data is so much slower sometimes. Used to take li
 
 Be smarter about loop duration to save costs. Slow down when things are healthy and speed up when not?
 - We could have a loop duration we use when everything is fine (say, 3s) and a faster duration if anything is unhealthy or not converged to desired state (say, 0.5s)
-- pgdaemons could listen on a UDP port for a "wakeup" that other nodes could fire off to all nodes when something significant happens, like a state change, or health degradation
+- pgdaemons could listen on a UDP port for a "wakeup" that other nodes could fire off to all nodes when something significant happens, like a state change, or health degradation (basically any cluster status change?)
 
 Have leader clear out stale node state
 - Remember the last time we saw a node status UUID using a monotonic timestamp. If it gets old, mark the node as unhealthy. If it gets super duper old, remove the node status.
