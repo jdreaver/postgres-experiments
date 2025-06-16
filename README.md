@@ -40,6 +40,7 @@ $ etcdctl get '' --prefix --write-out=json | jq '.kvs[] | { key: .key | @base64d
 - https://cloud.google.com/architecture/architectures-high-availability-postgresql-clusters-compute-engine
 - https://docs.aws.amazon.com/prescriptive-guidance/latest/migration-databases-postgresql-ec2/ha-postgresql-databases-ec2.html
 - [CrunchyData postgres operator](https://access.crunchydata.com/documentation/postgres-operator/latest)
+- https://pg-auto-failover.readthedocs.io
 
 ## Postgres on EC2
 

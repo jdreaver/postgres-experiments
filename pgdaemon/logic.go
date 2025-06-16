@@ -130,23 +130,21 @@ type NodeReplicationStatus struct {
 	WrittenLsn  *string `json:"written_lsn"`
 }
 
-// ClusterStateMachine processes the current cluster state and returns the updated cluster status, or nil if no changes are needed.
-func ClusterStateMachine(state ClusterState, nodeName string) (*ClusterStatus, error) {
-	newStatus, err := clusterStateMachineInner(state)
-	if err != nil {
-		return nil, fmt.Errorf("failed to process cluster state machine: %w", err)
-	}
-
-	if clusterStatusChanged(state.Status, newStatus) {
+func WriteClusterStatusIfChanged(store StateStore, oldStatus ClusterStatus, newStatus ClusterStatus, nodeName string) (ClusterStatus, error) {
+	if clusterStatusChanged(oldStatus, newStatus) {
 		newStatus.StatusUuid = uuid.New()
 		newStatus.SourceNode = nodeName
 		newStatus.SourceNodeTime = time.Now().Format(time.RFC3339)
-		return &newStatus, nil
+		if err := store.WriteClusterStatus(context.Background(), oldStatus.StatusUuid, newStatus); err != nil {
+			return ClusterStatus{}, fmt.Errorf("failed to write cluster status: %w", err)
+		}
 	}
-	return nil, nil
+	return newStatus, nil
 }
 
-func clusterStateMachineInner(state ClusterState) (ClusterStatus, error) {
+// ClusterStateMachine processes the current cluster state and returns
+// the updated cluster status, or nil if no changes are needed.
+func ClusterStateMachine(state ClusterState) ClusterStatus {
 	status := state.Status
 
 	// Sort node names for consistent ordering
@@ -238,5 +236,5 @@ func clusterStateMachineInner(state ClusterState) (ClusterStatus, error) {
 		status.HealthReasons = []string{}
 	}
 
-	return status, nil
+	return status
 }

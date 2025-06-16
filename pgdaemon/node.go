@@ -79,17 +79,12 @@ func performNodeTasks(ctx context.Context, store StateStore, conf config, pgNode
 		return fmt.Errorf("Failed to fetch node spec: %w", err)
 	}
 
-	newStatus, err := ClusterStateMachine(state, conf.nodeName)
+	newStatus := ClusterStateMachine(state)
+	newStatus, err = WriteClusterStatusIfChanged(store, state.Status, newStatus, conf.nodeName)
 	if err != nil {
-		return fmt.Errorf("Failed to process cluster state machine: %w", err)
+		return fmt.Errorf("Failed to write cluster status: %w", err)
 	}
-	if newStatus != nil {
-		prevStatusUuid := state.Status.StatusUuid
-		if err := store.WriteClusterStatus(ctx, prevStatusUuid, *newStatus); err != nil {
-			return fmt.Errorf("Failed to write cluster status: %w", err)
-		}
-		state.Status = *newStatus
-	}
+	state.Status = newStatus
 
 	if state.Status.IntendedPrimary == conf.nodeName {
 		if err := pgNode.ConfigureAsPrimary(ctx); err != nil {
