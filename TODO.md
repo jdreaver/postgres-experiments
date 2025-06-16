@@ -96,7 +96,7 @@ Be smarter about loop duration to save costs. Slow down when things are healthy 
 - pgdaemons could listen on a UDP port for a "wakeup" that other nodes could fire off to all nodes when something significant happens, like a state change, or health degradation
 
 Have leader clear out stale node state
-- Warn if we are seeing a node with a recent observed-state but that shouldn't be in the cluster
+- Remember the last time we saw a node status UUID using a monotonic timestamp. If it gets old, mark the node as unhealthy. If it gets super duper old, remove the node status.
 
 Nodes should ping one another so they can determine if etcd/DDB is down. If all nodes can be contacted, then continue as usual (sans leader elections). Especially important for primary. If primary can still contact a majority of replicas, then don't step down. If it can't, then step down.
 

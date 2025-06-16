@@ -155,26 +155,30 @@ func clusterStateMachineInner(state ClusterState, nodeName string, makeUuid func
 	}
 	slices.Sort(nodeNames)
 
-	// If we have no primary, pick the first node as the primary
-	// arbitrarily. (TODO: We pick the first node because we need to
-	// bootstrap empty clusters, but we should probably do
-	// something more sophisticated in the future.)
+	// If we have no primary, pick the best node as the primary
 	if status.IntendedPrimary == "" && len(state.Nodes) > 0 {
+		// Pick first node with no error. TODO: Should probably
+		// pick the node with the most recent healthy status.
 		for _, nodeName := range nodeNames {
-			status.IntendedPrimary = nodeName
-			break
+			if node := state.Nodes[nodeName]; node.Error == nil {
+				status.IntendedPrimary = nodeName
+			}
+		}
+
+		// Fallback to first node if no healthy nodes
+		if status.IntendedPrimary == "" {
+			status.IntendedPrimary = nodeNames[0]
 		}
 	}
 
-	// For all other nodes, make them replicas
+	// Rebuild replica list from scratch to handle nodes that left the cluster
+	var newReplicas []string
 	for _, nodeName := range nodeNames {
-		if nodeName == status.IntendedPrimary {
-			continue // Skip the primary
-		}
-		if !slices.Contains(status.IntendedReplicas, nodeName) {
-			status.IntendedReplicas = append(status.IntendedReplicas, nodeName)
+		if nodeName != status.IntendedPrimary {
+			newReplicas = append(newReplicas, nodeName)
 		}
 	}
+	status.IntendedReplicas = newReplicas
 
 	// If any node is unhealthy, set the cluster state to unhealthy.
 	// Otherwise, set it to healthy.
