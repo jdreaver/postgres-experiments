@@ -283,7 +283,6 @@ func (p *PostgresNode) ConfigureAsPrimary(ctx context.Context) error {
 		return fmt.Errorf("failed to check pg_is_in_recovery: %w", err)
 	}
 	if !isInRecovery {
-		log.Printf("Postgres is already not in recovery mode, no need to configure as primary")
 		return nil
 	}
 

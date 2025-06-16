@@ -1,7 +1,5 @@
 # TODO
 
-Get rid of leader election loop, and make TODO to nuke all leader election code.
-
 Write benchmark program in Go:
 - Use a synthetic dataset.
 - MongoDB probably only has one storage format (everything squished in a document), while postgres can either do tables or id/jsonb.
@@ -14,7 +12,7 @@ Document what I've done so far. Maybe with some nice ASCII art.
 
 Failover plan:
 - State machine
-  - Prefactor: much of what is currently in the cluster spec should actually be cluster status. Primary and replicas will change over time!
+  - Start writing tests for cluster state machine
   - Declare states like `healthy`, `waiting_for_catchup`, `selecting_new_primary`, `shutting_down_old`, `promoting_new`, `reconfiguring_replicas`, etc
   - Have a pure function that transitions states
     - Idea: re-run the function in the same loop over and over until the state stops changing. It is possible we transition through multiple states quickly, like if a replica is already caught up (so no need to wait for catchup, and we can immediately select a replica too)
@@ -85,7 +83,8 @@ Run MongoDB locally too.
 Make distinction between "can't connect to postgres" and "my queries failed".
 
 Logging
-- Use log levels that systemd understands so we can filter out INFO logs sometimes (any significant events can be a higher level, maybe)
+- Use log levels so we can filter out INFO/DEBUG logs sometimes (any significant events can be a higher level, maybe)
+  - Would be nice if systemd understood the levels too
 - Structured logging: Use context more, like to store goroutine "name" (leader, node reconciler, health check server)
 
 Use https://github.com/spf13/viper to separate daemon and init command line flags and to support more configuration possibilities
