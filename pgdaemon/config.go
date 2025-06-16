@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -22,8 +21,7 @@ type config struct {
 	pgBouncerHost string
 	pgBouncerPort int
 	listenAddress string
-	primaryName   string
-	replicaNames  []string
+	targetPrimary string
 }
 
 func parseFlags() config {
@@ -38,8 +36,7 @@ func parseFlags() config {
 	pbPort := flag.Int("pgbouncer-port", 6432, "PgBouncer port")
 	pgUser := flag.String("pguser", "postgres", "PostgreSQL user")
 	listenAddress := flag.String("listen", "0.0.0.0:8080", "Address to listen on")
-	primaryName := flag.String("primary-name", "", "Name of the primary node (for initialization)")
-	replicaNames := flag.String("replica-names", "", "CSV of replica names (for initialization)")
+	targetPrimary := flag.String("target-primary", "", "Target primary node for manual failover (optional)")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: pgdaemon [command] [options]\n")
@@ -81,7 +78,6 @@ func parseFlags() config {
 		pgBouncerHost: *pbHost,
 		pgBouncerPort: *pbPort,
 		listenAddress: *listenAddress,
-		primaryName:   *primaryName,
-		replicaNames:  strings.Split(*replicaNames, ","),
+		targetPrimary: *targetPrimary,
 	}
 }

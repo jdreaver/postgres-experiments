@@ -38,6 +38,8 @@ func main() {
 	switch conf.command {
 	case "show-cluster":
 		showCluster(ctx, store)
+	case "failover":
+		failover(ctx, store, conf.targetPrimary)
 	case "daemon":
 		daemon(ctx, store, conf)
 	default:
@@ -58,6 +60,25 @@ func showCluster(ctx context.Context, store StateStore) {
 		log.Fatalf("Failed to convert cluster state to JSON: %v", err)
 	}
 	fmt.Println(string(jsonBytes))
+}
+
+func failover(ctx context.Context, store StateStore, targetPrimary string) {
+	if targetPrimary == "" {
+		log.Fatal("Target primary node must be specified for failover")
+	}
+
+	state, err := store.FetchClusterState(ctx)
+	if err != nil {
+		log.Fatalf("Failed to fetch cluster state: %v", err)
+	}
+
+	newStatus := state.Status
+	newStatus.IntendedPrimary = targetPrimary
+	nodeName := "pgdaemon CLI"
+	if _, err := WriteClusterStatusIfChanged(store, state.Status, newStatus, nodeName); err != nil {
+		log.Fatalf("Failed to write cluster status: %v", err)
+	}
+	log.Printf("Initiated failover to %s", targetPrimary)
 }
 
 func daemon(ctx context.Context, store StateStore, conf config) {
