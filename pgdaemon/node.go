@@ -21,7 +21,7 @@ func nodeReconcilerLoop(ctx context.Context, store StateStore, conf config, pgNo
 		case <-ctx.Done():
 			return fmt.Errorf("returning ctx.Done() error in node reconciler loop: %w", ctx.Err())
 		case <-ticker.C:
-			if err := storeNodeStatus(ctx, store, pgNode); err != nil {
+			if err := storeNodeStatus(ctx, store, conf.nodeName, pgNode); err != nil {
 				log.Printf("Failed to store node status: %v", err)
 			}
 
@@ -32,8 +32,9 @@ func nodeReconcilerLoop(ctx context.Context, store StateStore, conf config, pgNo
 	}
 }
 
-func storeNodeStatus(ctx context.Context, store StateStore, pgNode *PostgresNode) error {
+func storeNodeStatus(ctx context.Context, store StateStore, nodeName string, pgNode *PostgresNode) error {
 	var status NodeStatus
+	status.Name = nodeName
 	status.StatusUuid = uuid.New()
 
 	pgState, err := pgNode.FetchState()
