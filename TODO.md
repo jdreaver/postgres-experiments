@@ -1,5 +1,7 @@
 # TODO
 
+Don't make Nodes (in state) a map. I don't like random iteration order.
+
 Write benchmark program in Go:
 - Use a synthetic dataset.
 - MongoDB probably only has one storage format (everything squished in a document), while postgres can either do tables or id/jsonb.

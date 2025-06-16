@@ -146,68 +146,96 @@ func normalizeSlicesInStruct(v reflect.Value) {
 // the updated cluster status, or nil if no changes are needed.
 func ComputeNewClusterStatus(state ClusterState) ClusterStatus {
 	status := state.Status
+	nodeNames := getSortedNodeNames(state.Nodes)
 
-	// Sort node names for consistent ordering
+	// Handle role assignment
+	status.IntendedPrimary = selectIntendedPrimary(nodeNames, state.Nodes, status.IntendedPrimary)
+	status.IntendedReplicas = buildIntendedReplicas(nodeNames, status.IntendedPrimary)
+
+	// Assess health
+	status.HealthReasons = computeClusterUnhealthyReasons(nodeNames, state.Nodes, status)
+	status.Health = ClusterHealthHealthy
+	if len(status.HealthReasons) > 0 {
+		status.Health = ClusterHealthUnhealthy
+	}
+
+	// TODO: Handle failover state transitions
+
+	return status
+}
+
+// getSortedNodeNames returns a sorted list of node names for consistent ordering
+func getSortedNodeNames(nodes map[string]*NodeStatus) []string {
 	var nodeNames []string
-	for nodeName := range state.Nodes {
+	for nodeName := range nodes {
 		nodeNames = append(nodeNames, nodeName)
 	}
 	slices.Sort(nodeNames)
+	return nodeNames
+}
 
-	// If we have no primary, pick the best node as the primary
-	if status.IntendedPrimary == "" && len(state.Nodes) > 0 {
-		// Pick first node with no error. TODO: Should probably
-		// pick the node with the most recent healthy status.
+// selectIntendedPrimary chooses which node should be the primary
+func selectIntendedPrimary(nodeNames []string, nodes map[string]*NodeStatus, currentPrimary string) string {
+	// If we already have a primary and it's still in the cluster, keep it
+	if currentPrimary != "" {
 		for _, nodeName := range nodeNames {
-			if node := state.Nodes[nodeName]; node.Error == nil {
-				status.IntendedPrimary = nodeName
+			if nodeName == currentPrimary {
+				return currentPrimary
+			}
+		}
+	}
+
+	// If we have no primary or current primary left, pick the best node
+	if len(nodeNames) > 0 {
+		// Pick first node with no error
+		for _, nodeName := range nodeNames {
+			if node := nodes[nodeName]; node.Error == nil {
+				return nodeName
 			}
 		}
 
 		// Fallback to first node if no healthy nodes
-		if status.IntendedPrimary == "" {
-			status.IntendedPrimary = nodeNames[0]
-		}
+		return nodeNames[0]
 	}
 
-	// Rebuild replica list from scratch to handle nodes that left the cluster
-	var newReplicas []string
+	return ""
+}
+
+// buildIntendedReplicas creates the replica list from all nodes except the primary
+func buildIntendedReplicas(nodeNames []string, intendedPrimary string) []string {
+	var replicas []string
 	for _, nodeName := range nodeNames {
-		if nodeName != status.IntendedPrimary {
-			newReplicas = append(newReplicas, nodeName)
+		if nodeName != intendedPrimary {
+			replicas = append(replicas, nodeName)
 		}
 	}
-	if len(newReplicas) == 0 {
-		status.IntendedReplicas = nil
-	} else {
-		status.IntendedReplicas = newReplicas
+	if len(replicas) == 0 {
+		return nil
 	}
+	return replicas
+}
 
-	// If any node is unhealthy, set the cluster state to unhealthy.
-	// Otherwise, set it to healthy.
-	allNodesHealthy := true
-	unhealthyReasons := []string{}
+// computeClusterUnhealthyReasons assesses the overall health of the cluster
+func computeClusterUnhealthyReasons(nodeNames []string, nodes map[string]*NodeStatus, status ClusterStatus) []string {
 	if len(nodeNames) == 0 {
-		allNodesHealthy = false
-		unhealthyReasons = append(unhealthyReasons, "No nodes in the cluster")
+		return []string{"No nodes in the cluster"}
 	}
+
+	var unhealthyReasons []string
+
 	for _, nodeName := range nodeNames {
-		nodeStatus := state.Nodes[nodeName]
+		nodeStatus := nodes[nodeName]
 
 		if nodeStatus.Error != nil {
-			allNodesHealthy = false
 			reason := fmt.Sprintf("Node %s has an error", nodeName)
 			unhealthyReasons = append(unhealthyReasons, reason)
 		} else if nodeStatus.IsPrimary {
 			if nodeName != status.IntendedPrimary {
-				allNodesHealthy = false
 				reason := fmt.Sprintf("Node %s is marked as primary but not intended primary", nodeName)
 				unhealthyReasons = append(unhealthyReasons, reason)
 			}
-			// Check replica statuses match.
-			// TODO: Check that the actual names match too!
+			// Check replica statuses match
 			if len(nodeStatus.Replicas) != len(status.IntendedReplicas) {
-				allNodesHealthy = false
 				reason := fmt.Sprintf(
 					"Node %s has %d replica statuses but there are %d intended replicas",
 					nodeName,
@@ -219,26 +247,16 @@ func ComputeNewClusterStatus(state ClusterState) ClusterStatus {
 		} else {
 			// Node is replica
 			if !slices.Contains(status.IntendedReplicas, nodeName) {
-				allNodesHealthy = false
 				reason := fmt.Sprintf("Node %s is not in the intended replicas list", nodeName)
 				unhealthyReasons = append(unhealthyReasons, reason)
 			}
 			// Should be replicating to primary
 			if nodeStatus.ReplicationStatus == nil {
-				allNodesHealthy = false
 				reason := fmt.Sprintf("Node %s has no replication status", nodeName)
 				unhealthyReasons = append(unhealthyReasons, reason)
 			}
 		}
 	}
 
-	if !allNodesHealthy {
-		status.Health = ClusterHealthUnhealthy
-		status.HealthReasons = unhealthyReasons
-	} else {
-		status.Health = ClusterHealthHealthy
-		status.HealthReasons = nil
-	}
-
-	return status
+	return unhealthyReasons
 }
