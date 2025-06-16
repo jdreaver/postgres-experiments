@@ -11,6 +11,36 @@ Write benchmark program in Go:
 Document what I've done so far. Maybe with some nice ASCII art.
 
 Failover plan:
+
+  ```
+  // ClusterStatus defines the current status of the cluster.
+  type ClusterStatus struct {
+          ...
+  	FailoverState FailoverState `json:"failover_state,omitempty"`
+
+  	LastFailoverReason string `json:"last_failover_reason,omitempty"`
+  	LastFailoverTime   string `json:"last_failover_time,omitempty"`
+
+  	// TargetPrimary is set during manual failovers to indicate the
+  	// desired primary. It is cleared after this primary is the new
+  	// IntendedPrimary.
+  	FailoverTargetPrimary string `json:"failover_target_primary,omitempty"`
+  }
+
+  type FailoverState string
+
+  const (
+  	FailoverStateStable FailoverState = "stable"
+  	// FailoverStateInitiated means failover has started, either
+  	// automatically or manually.
+  	FailoverStateInitiated             FailoverState = "initiated"
+  	FailoverStateWaitingForCatchup     FailoverState = "waiting_for_catchup"
+  	FailoverStateDemotingOldPrimary    FailoverState = "demoting_old_primary"
+  	FailoverStatePromotingNewPrimary   FailoverState = "promoting_new_primary"
+  	FailoverStateReconfiguringReplicas FailoverState = "reconfiguring_replicas"
+  )
+  ```
+
 - Using ClusterStatus
   - Start writing tests for this
   - It doesn't make sense to have a single "state". We should constantly reconcile status with the intended spec from scratch. Instead of a single state, have fields for different concurrent states. For example, we can be unhealthy while doing a failover, etc.
