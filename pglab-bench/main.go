@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -19,11 +21,12 @@ func main() {
 	mongoURL := flag.String("mongo", "mongodb://mongo0,mongo1,mongo2/", "MongoDB connection string")
 	duration := flag.Duration("duration", 5*time.Second, "Duration to run each benchmark")
 	database := flag.String("database", "benchmarks", "Database name to use")
+	clients := flag.Int("clients", 1, "Number of concurrent clients")
 	flag.Parse()
 
 	ctx := context.Background()
 
-	fmt.Printf("Starting benchmarks with %v duration\n", *duration)
+	fmt.Printf("Starting benchmarks with %v duration and %d clients\n", *duration, *clients)
 
 	databases := []func() (BenchmarkDatabase, error){
 		func() (BenchmarkDatabase, error) {
@@ -44,7 +47,7 @@ func main() {
 		}
 
 		fmt.Printf("Running %s benchmark...\n", db.Name())
-		if err := runBenchmark(ctx, db, *duration); err != nil {
+		if err := runBenchmark(ctx, dbFactory, *duration, *clients); err != nil {
 			db.Close(ctx)
 			log.Fatalf("%s benchmark failed: %v", db.Name(), err)
 		}
@@ -57,34 +60,70 @@ func main() {
 	fmt.Println("Benchmarks completed successfully")
 }
 
-func runBenchmark(ctx context.Context, db BenchmarkDatabase, duration time.Duration) error {
-	if err := db.Setup(ctx); err != nil {
-		return fmt.Errorf("failed to setup %s: %w", db.Name(), err)
+func runBenchmark(ctx context.Context, dbFactory func() (BenchmarkDatabase, error), duration time.Duration, clients int) error {
+	// Setup once with a single connection
+	setupDB, err := dbFactory()
+	if err != nil {
+		return fmt.Errorf("failed to create setup database: %w", err)
 	}
 
+	if err := setupDB.Setup(ctx); err != nil {
+		return fmt.Errorf("failed to setup %s: %w", setupDB.Name(), err)
+	}
+
+	if err := setupDB.Close(ctx); err != nil {
+		return fmt.Errorf("failed to close setup connection: %w", err)
+	}
+
+	// Shared state for all clients
+	var totalOperations int64
+	var txIDCounter int64
+	deadline := time.Now().Add(duration)
+
+	// Start all client goroutines
+	var wg sync.WaitGroup
 	start := time.Now()
-	deadline := start.Add(duration)
-	operations := 0
 
-	for i := 0; time.Now().Before(deadline); i++ {
-		tx := NewTransaction(i)
+	for range clients {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 
-		if err := db.InsertTransaction(ctx, tx); err != nil {
-			return fmt.Errorf("failed to insert transaction %d: %w", i, err)
-		}
-		operations++
-
-		if time.Now().Before(deadline) {
-			if _, err := db.ReadTransaction(ctx, tx.ID); err != nil {
-				return fmt.Errorf("failed to read transaction %d: %w", i, err)
+			clientDB, err := dbFactory()
+			if err != nil {
+				log.Printf("Failed to create client database connection: %v", err)
+				return
 			}
-			operations++
-		}
+			defer clientDB.Close(ctx)
+
+			clientOps := 0
+			for time.Now().Before(deadline) {
+				txID := int(atomic.AddInt64(&txIDCounter, 1) - 1)
+				tx := NewTransaction(txID)
+
+				if err := clientDB.InsertTransaction(ctx, tx); err != nil {
+					log.Printf("Failed to insert transaction %d: %v", txID, err)
+					continue
+				}
+				clientOps++
+
+				if time.Now().Before(deadline) {
+					if _, err := clientDB.ReadTransaction(ctx, tx.ID); err != nil {
+						log.Printf("Failed to read transaction %d: %v", txID, err)
+						continue
+					}
+					clientOps++
+				}
+			}
+			atomic.AddInt64(&totalOperations, int64(clientOps))
+		}()
 	}
+
+	wg.Wait()
 	actualDuration := time.Since(start)
 
 	fmt.Printf("%s: %d operations in %v (%.2f ops/sec)\n",
-		db.Name(), operations, actualDuration, float64(operations)/actualDuration.Seconds())
+		setupDB.Name(), totalOperations, actualDuration, float64(totalOperations)/actualDuration.Seconds())
 
 	return nil
 }

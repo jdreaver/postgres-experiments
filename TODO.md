@@ -1,7 +1,6 @@
 # TODO
 
 Benchmarking:
-- Multiple clients (goroutine per client) with connection pooling
 - More tables/collections in dataset, with a more realistic sequence of actions (maybe copy the pgbench dataset?)
 - Have enough data where the dataset doesn't fit in memory (can artificially limit memory of database)
 - Allow indexes
