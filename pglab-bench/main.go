@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -55,6 +56,11 @@ func main() {
 		log.Fatalf("PostgreSQL benchmark failed: %v", err)
 	}
 
+	fmt.Println("Running PostgreSQL jsonb benchmark...")
+	if err := runPostgresJsonbBenchmark(ctx, config); err != nil {
+		log.Fatalf("PostgreSQL jsonb benchmark failed: %v", err)
+	}
+
 	fmt.Println("Running MongoDB benchmark...")
 	if err := runMongoBenchmark(ctx, config); err != nil {
 		log.Fatalf("MongoDB benchmark failed: %v", err)
@@ -103,6 +109,46 @@ func runPostgresBenchmark(ctx context.Context, config Config) error {
 	return nil
 }
 
+func runPostgresJsonbBenchmark(ctx context.Context, config Config) error {
+	pgConfig, err := pgx.ParseConfig(config.PostgresURL)
+	if err != nil {
+		return fmt.Errorf("failed to parse PostgreSQL URL: %w", err)
+	}
+
+	// N.B. Use QueryExecModeExec because the default uses statement
+	// caching, which doesn't work with pgbouncer.
+	pgConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
+
+	conn, err := pgx.ConnectConfig(ctx, pgConfig)
+	if err != nil {
+		return fmt.Errorf("failed to connect to PostgreSQL: %w", err)
+	}
+	defer conn.Close(ctx)
+
+	if err := setupPostgresJsonbTable(ctx, conn); err != nil {
+		return fmt.Errorf("failed to setup PostgreSQL jsonb table: %w", err)
+	}
+
+	start := time.Now()
+	for i := range config.Iterations {
+		tx := NewTransaction(i)
+
+		if err := insertPostgresJsonbTransaction(ctx, conn, tx); err != nil {
+			return fmt.Errorf("failed to insert transaction %d: %w", i, err)
+		}
+
+		if _, err := readPostgresJsonbTransaction(ctx, conn, tx.ID); err != nil {
+			return fmt.Errorf("failed to read transaction %d: %w", i, err)
+		}
+	}
+	duration := time.Since(start)
+
+	fmt.Printf("PostgreSQL (jsonb): %d operations in %v (%.2f ops/sec)\n",
+		config.Iterations*2, duration, float64(config.Iterations*2)/duration.Seconds())
+
+	return nil
+}
+
 func runMongoBenchmark(ctx context.Context, config Config) error {
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI(config.MongoURL))
 	if err != nil {
@@ -138,19 +184,30 @@ func runMongoBenchmark(ctx context.Context, config Config) error {
 
 func setupPostgresTable(ctx context.Context, conn *pgx.Conn) error {
 	query := `
+DROP TABLE IF EXISTS transactions;
+
 CREATE TABLE IF NOT EXISTS transactions (
   id TEXT PRIMARY KEY,
   amount TEXT NOT NULL,
   currency TEXT NOT NULL,
   time TIMESTAMP WITH TIME ZONE NOT NULL,
   description TEXT NOT NULL
-)`
+);`
 
-	if _, err := conn.Exec(ctx, query); err != nil {
-		return err
-	}
+	_, err := conn.Exec(ctx, query)
+	return err
+}
 
-	_, err := conn.Exec(ctx, "TRUNCATE TABLE transactions")
+func setupPostgresJsonbTable(ctx context.Context, conn *pgx.Conn) error {
+	query := `
+DROP TABLE IF EXISTS transactions_jsonb;
+
+CREATE TABLE IF NOT EXISTS transactions_jsonb (
+  id TEXT PRIMARY KEY,
+  data JSONB NOT NULL
+);`
+
+	_, err := conn.Exec(ctx, query)
 	return err
 }
 
@@ -171,6 +228,33 @@ func readPostgresTransaction(ctx context.Context, conn *pgx.Conn, id string) (*T
 	if err != nil {
 		return nil, err
 	}
+	return &tx, nil
+}
+
+func insertPostgresJsonbTransaction(ctx context.Context, conn *pgx.Conn, tx Transaction) error {
+	txBytes, err := json.Marshal(tx)
+	if err != nil {
+		return fmt.Errorf("failed to marshal transaction: %w", err)
+	}
+
+	query := `INSERT INTO transactions_jsonb (id, data) VALUES ($1, $2)`
+	_, err = conn.Exec(ctx, query, tx.ID, string(txBytes))
+	return err
+}
+
+func readPostgresJsonbTransaction(ctx context.Context, conn *pgx.Conn, id string) (*Transaction, error) {
+	var data string
+	query := `SELECT data FROM transactions_jsonb WHERE id = $1`
+	err := conn.QueryRow(ctx, query, id).Scan(&data)
+	if err != nil {
+		return nil, err
+	}
+
+	var tx Transaction
+	if err := json.Unmarshal([]byte(data), &tx); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal transaction: %w", err)
+	}
+
 	return &tx, nil
 }
 
