@@ -15,6 +15,7 @@ Benchmarking:
   - Corroborated here:
     - https://info.enterprisedb.com/rs/069-ALB-339/images/PostgreSQL_MongoDB_Benchmark-WhitepaperFinal.pdf
     - https://www.enterprisedb.com/press-releases/new-benchmarks-show-postgres-dominating-mongodb-varied-workloads
+- Remember about haproxy and pgbouncer in front of postgres. I see like 1.8x throughput for a single client when we talk to primary directly.
 
 Integration test that performs a couple failovers and postgres queries work (through HAProxy), all nodes are reporting to etcd, all nodes are healthy, replication is working, etc
 
