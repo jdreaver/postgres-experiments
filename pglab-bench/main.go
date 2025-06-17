@@ -28,50 +28,34 @@ func main() {
 
 	fmt.Printf("Starting benchmarks with %v duration and %d clients\n", *duration, *clients)
 
-	databases := []func() (BenchmarkDatabase, error){
-		func() (BenchmarkDatabase, error) {
-			return NewPostgresDB(ctx, *postgresURL)
-		},
-		func() (BenchmarkDatabase, error) {
-			return NewPostgresJsonbDB(ctx, *postgresURL)
-		},
-		func() (BenchmarkDatabase, error) {
-			return NewMongoDB(ctx, *mongoURL, *database)
-		},
+	databases := []BenchmarkDatabase{
+		NewPostgresDB(*postgresURL),
+		NewPostgresJsonbDB(*postgresURL),
+		NewMongoDB(*mongoURL, *database),
 	}
 
-	for _, dbFactory := range databases {
-		db, err := dbFactory()
-		if err != nil {
-			log.Fatalf("Failed to create database: %v", err)
-		}
-
+	for _, db := range databases {
 		fmt.Printf("Running %s benchmark...\n", db.Name())
-		if err := runBenchmark(ctx, dbFactory, *duration, *clients); err != nil {
-			db.Close(ctx)
+		if err := runBenchmark(ctx, db, *duration, *clients); err != nil {
 			log.Fatalf("%s benchmark failed: %v", db.Name(), err)
-		}
-
-		if err := db.Close(ctx); err != nil {
-			log.Printf("Warning: failed to close %s connection: %v", db.Name(), err)
 		}
 	}
 
 	fmt.Println("Benchmarks completed successfully")
 }
 
-func runBenchmark(ctx context.Context, dbFactory func() (BenchmarkDatabase, error), duration time.Duration, clients int) error {
+func runBenchmark(ctx context.Context, db BenchmarkDatabase, duration time.Duration, clients int) error {
 	// Setup once with a single connection
-	setupDB, err := dbFactory()
+	setupConn, err := db.Connect(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create setup database: %w", err)
 	}
 
-	if err := setupDB.Setup(ctx); err != nil {
-		return fmt.Errorf("failed to setup %s: %w", setupDB.Name(), err)
+	if err := setupConn.Setup(ctx); err != nil {
+		return fmt.Errorf("failed to setup %s: %w", db.Name(), err)
 	}
 
-	if err := setupDB.Close(ctx); err != nil {
+	if err := setupConn.Close(ctx); err != nil {
 		return fmt.Errorf("failed to close setup connection: %w", err)
 	}
 
@@ -89,31 +73,29 @@ func runBenchmark(ctx context.Context, dbFactory func() (BenchmarkDatabase, erro
 		go func() {
 			defer wg.Done()
 
-			clientDB, err := dbFactory()
+			conn, err := db.Connect(ctx)
 			if err != nil {
 				log.Printf("Failed to create client database connection: %v", err)
 				return
 			}
-			defer clientDB.Close(ctx)
+			defer conn.Close(ctx)
 
 			clientOps := 0
 			for time.Now().Before(deadline) {
 				txID := int(atomic.AddInt64(&txIDCounter, 1) - 1)
 				tx := NewTransaction(txID)
 
-				if err := clientDB.InsertTransaction(ctx, tx); err != nil {
+				if err := conn.InsertTransaction(ctx, tx); err != nil {
 					log.Printf("Failed to insert transaction %d: %v", txID, err)
 					continue
 				}
 				clientOps++
 
-				if time.Now().Before(deadline) {
-					if _, err := clientDB.ReadTransaction(ctx, tx.ID); err != nil {
-						log.Printf("Failed to read transaction %d: %v", txID, err)
-						continue
-					}
-					clientOps++
+				if _, err := conn.ReadTransaction(ctx, tx.ID); err != nil {
+					log.Printf("Failed to read transaction %d: %v", txID, err)
+					continue
 				}
+				clientOps++
 			}
 			atomic.AddInt64(&totalOperations, int64(clientOps))
 		}()
@@ -123,7 +105,7 @@ func runBenchmark(ctx context.Context, dbFactory func() (BenchmarkDatabase, erro
 	actualDuration := time.Since(start)
 
 	fmt.Printf("%s: %d operations in %v (%.2f ops/sec)\n",
-		setupDB.Name(), totalOperations, actualDuration, float64(totalOperations)/actualDuration.Seconds())
+		db.Name(), totalOperations, actualDuration, float64(totalOperations)/actualDuration.Seconds())
 
 	return nil
 }
@@ -148,6 +130,10 @@ func NewTransaction(i int) Transaction {
 
 type BenchmarkDatabase interface {
 	Name() string
+	Connect(ctx context.Context) (DBConnection, error)
+}
+
+type DBConnection interface {
 	Setup(ctx context.Context) error
 	InsertTransaction(ctx context.Context, tx Transaction) error
 	ReadTransaction(ctx context.Context, id string) (*Transaction, error)
@@ -172,21 +158,29 @@ func connectPostgres(ctx context.Context, url string) (*pgx.Conn, error) {
 }
 
 type PostgresDB struct {
+	url string
+}
+
+type PostgresDBConn struct {
 	conn *pgx.Conn
 }
 
-func NewPostgresDB(ctx context.Context, url string) (*PostgresDB, error) {
-	conn, err := connectPostgres(ctx, url)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to create postgres connection: %v", err)
-	}
-
-	return &PostgresDB{conn: conn}, nil
+func NewPostgresDB(url string) *PostgresDB {
+	return &PostgresDB{url: url}
 }
 
 func (p *PostgresDB) Name() string { return "PostgreSQL" }
 
-func (p *PostgresDB) Setup(ctx context.Context) error {
+func (p *PostgresDB) Connect(ctx context.Context) (DBConnection, error) {
+	conn, err := connectPostgres(ctx, p.url)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create postgres connection: %v", err)
+	}
+
+	return &PostgresDBConn{conn: conn}, nil
+}
+
+func (p *PostgresDBConn) Setup(ctx context.Context) error {
 	query := `
 DROP TABLE IF EXISTS transactions;
 
@@ -202,13 +196,13 @@ CREATE TABLE IF NOT EXISTS transactions (
 	return err
 }
 
-func (p *PostgresDB) InsertTransaction(ctx context.Context, tx Transaction) error {
+func (p *PostgresDBConn) InsertTransaction(ctx context.Context, tx Transaction) error {
 	query := `INSERT INTO transactions (id, amount, currency, time, description) VALUES ($1, $2, $3, $4, $5)`
 	_, err := p.conn.Exec(ctx, query, tx.ID, tx.Amount, tx.Currency, tx.Time, tx.Description)
 	return err
 }
 
-func (p *PostgresDB) ReadTransaction(ctx context.Context, id string) (*Transaction, error) {
+func (p *PostgresDBConn) ReadTransaction(ctx context.Context, id string) (*Transaction, error) {
 	var tx Transaction
 	query := `SELECT id, amount, currency, time, description FROM transactions WHERE id = $1`
 	err := p.conn.QueryRow(ctx, query, id).Scan(&tx.ID, &tx.Amount, &tx.Currency, &tx.Time, &tx.Description)
@@ -218,26 +212,34 @@ func (p *PostgresDB) ReadTransaction(ctx context.Context, id string) (*Transacti
 	return &tx, nil
 }
 
-func (p *PostgresDB) Close(ctx context.Context) error {
+func (p *PostgresDBConn) Close(ctx context.Context) error {
 	return p.conn.Close(ctx)
 }
 
 type PostgresJsonbDB struct {
+	url string
+}
+
+type PostgresJsonbDBConn struct {
 	conn *pgx.Conn
 }
 
-func NewPostgresJsonbDB(ctx context.Context, url string) (*PostgresJsonbDB, error) {
-	conn, err := connectPostgres(ctx, url)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to create postgres connection: %v", err)
-	}
-
-	return &PostgresJsonbDB{conn: conn}, nil
+func NewPostgresJsonbDB(url string) *PostgresJsonbDB {
+	return &PostgresJsonbDB{url: url}
 }
 
 func (p *PostgresJsonbDB) Name() string { return "PostgreSQL (jsonb)" }
 
-func (p *PostgresJsonbDB) Setup(ctx context.Context) error {
+func (p *PostgresJsonbDB) Connect(ctx context.Context) (DBConnection, error) {
+	conn, err := connectPostgres(ctx, p.url)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create postgres connection: %v", err)
+	}
+
+	return &PostgresDBConn{conn: conn}, nil
+}
+
+func (p *PostgresJsonbDBConn) Setup(ctx context.Context) error {
 	query := `
 DROP TABLE IF EXISTS transactions_jsonb;
 
@@ -250,7 +252,7 @@ CREATE TABLE IF NOT EXISTS transactions_jsonb (
 	return err
 }
 
-func (p *PostgresJsonbDB) InsertTransaction(ctx context.Context, tx Transaction) error {
+func (p *PostgresJsonbDBConn) InsertTransaction(ctx context.Context, tx Transaction) error {
 	txBytes, err := json.Marshal(tx)
 	if err != nil {
 		return fmt.Errorf("failed to marshal transaction: %w", err)
@@ -261,7 +263,7 @@ func (p *PostgresJsonbDB) InsertTransaction(ctx context.Context, tx Transaction)
 	return err
 }
 
-func (p *PostgresJsonbDB) ReadTransaction(ctx context.Context, id string) (*Transaction, error) {
+func (p *PostgresJsonbDBConn) ReadTransaction(ctx context.Context, id string) (*Transaction, error) {
 	var data string
 	query := `SELECT data FROM transactions_jsonb WHERE id = $1`
 	err := p.conn.QueryRow(ctx, query, id).Scan(&data)
@@ -277,37 +279,46 @@ func (p *PostgresJsonbDB) ReadTransaction(ctx context.Context, id string) (*Tran
 	return &tx, nil
 }
 
-func (p *PostgresJsonbDB) Close(ctx context.Context) error {
+func (p *PostgresJsonbDBConn) Close(ctx context.Context) error {
 	return p.conn.Close(ctx)
 }
 
 type MongoDB struct {
+	url      string
+	database string
+}
+
+type MongoDBConn struct {
 	client     *mongo.Client
 	collection *mongo.Collection
 }
 
-func NewMongoDB(ctx context.Context, url, database string) (*MongoDB, error) {
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(url))
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
-	}
-
-	collection := client.Database(database).Collection("transactions")
-	return &MongoDB{client: client, collection: collection}, nil
+func NewMongoDB(url, database string) *MongoDB {
+	return &MongoDB{url: url, database: database}
 }
 
 func (m *MongoDB) Name() string { return "MongoDB" }
 
-func (m *MongoDB) Setup(ctx context.Context) error {
+func (m *MongoDB) Connect(ctx context.Context) (DBConnection, error) {
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(m.url))
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
+	}
+
+	collection := client.Database(m.database).Collection("transactions")
+	return &MongoDBConn{client: client, collection: collection}, nil
+}
+
+func (m *MongoDBConn) Setup(ctx context.Context) error {
 	return m.collection.Drop(ctx)
 }
 
-func (m *MongoDB) InsertTransaction(ctx context.Context, tx Transaction) error {
+func (m *MongoDBConn) InsertTransaction(ctx context.Context, tx Transaction) error {
 	_, err := m.collection.InsertOne(ctx, tx)
 	return err
 }
 
-func (m *MongoDB) ReadTransaction(ctx context.Context, id string) (*Transaction, error) {
+func (m *MongoDBConn) ReadTransaction(ctx context.Context, id string) (*Transaction, error) {
 	var tx Transaction
 	err := m.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&tx)
 	if err != nil {
@@ -316,6 +327,6 @@ func (m *MongoDB) ReadTransaction(ctx context.Context, id string) (*Transaction,
 	return &tx, nil
 }
 
-func (m *MongoDB) Close(ctx context.Context) error {
+func (m *MongoDBConn) Close(ctx context.Context) error {
 	return m.client.Disconnect(ctx)
 }
