@@ -60,3 +60,7 @@ pgbench: $(POSTGRES_MACHINES)
 .PHONY: test
 test:
 	go -C pgdaemon test ./...
+
+.PHONY: bench
+bench: pg_cluster init_replset
+	go -C pglab-bench run .

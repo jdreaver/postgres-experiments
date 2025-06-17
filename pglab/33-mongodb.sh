@@ -123,4 +123,9 @@ init_mongo_replset() {
         echo "Adding $replica to the replica set..."
         sudo systemd-run --machine mongo0 --quiet --pty mongosh --eval "rs.add(\"$replica:27017\")"
     done
+
+    # A write concern of {w: 1, j: false} is most similar to
+    # synchronous_commit=off in postgres.
+    echo "Setting default write concern to {w: 1, j: false}..."
+    sudo systemd-run --machine mongo0 --quiet --pty mongosh --eval 'db.adminCommand({"setDefaultRWConcern": 1, "defaultWriteConcern": {"w": 1, "j": false}})'
 }

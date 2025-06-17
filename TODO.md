@@ -1,12 +1,19 @@
 # TODO
 
-Write benchmark program in Go:
-- Use a synthetic dataset.
-- MongoDB probably only has one storage format (everything squished in a document), while postgres can either do tables or id/jsonb.
-- Varying number of indexes?
-- With or without foreign keys
+Benchmarking:
+- Multiple clients (goroutine per client)
+- More tables/collections in dataset, with a more realistic sequence of actions (maybe copy the pgbench dataset?)
+- Allow selecting between normal postgres tables and _id/jsonb tables
+- Have enough data where the dataset doesn't fit in memory (can artificially limit memory of database)
+- Allow indexes
+- Toggle foreign keys for postgres
 - Transactions or not in postgres
-- Also measure how much downtime we incur during failover, and how well we can continue on while retrying queries
+- Vary size of each row/document by adding nonsense or lorem ipsum to a description string
+- Report difference in system CPU and memory utilization (think about how to do this when running on EC2)
+  - On my machine I observe very consistently high CPU utilization and disk IO for Mongo compared to postgres
+  - Corroborated here https://info.enterprisedb.com/rs/069-ALB-339/images/PostgreSQL_MongoDB_Benchmark-WhitepaperFinal.pdf
+
+Integration test that performs a couple failovers and postgres queries work (through HAProxy), all nodes are reporting to etcd, all nodes are healthy, replication is working, etc
 
 Document what I've done so far. Maybe with some nice ASCII art.
 
@@ -54,13 +61,7 @@ Failover plan:
 
 Mark cluster unhealthy and somehow mark replica as stale if `reply_time` is much lower than `node_time` on primary for a replica. Do this date math inside of postgres. (Or, is `write_lag` sufficient?)
 
-Pure logic (both for election and for state):
-- Add a ton of tests on this logic
-- Store previous spec/status and current spec/status, as well as time diff between them.
-- Using prev/current state, spit out actions to take
-
-Testing:
-- Integration test that performs a couple failovers and postgres queries work (through HAProxy), all nodes are reporting to etcd, all nodes are healthy, replication is working, etc
+Leader election testing (if we don't nuke leader election):
 - Test `runInner` with mocked backend for leader election
 - Property tests that run "actions" sorted by time for leader election. Assert we have at most one leader at a time (no more than one node _thinks_ they are leader)
 
