@@ -17,13 +17,13 @@ import (
 func main() {
 	postgresURL := flag.String("postgres", "postgres://postgres:postgres@haproxy0:5432/postgres", "PostgreSQL connection string")
 	mongoURL := flag.String("mongo", "mongodb://mongo0,mongo1,mongo2/", "MongoDB connection string")
-	iterations := flag.Int("iterations", 10000, "Number of benchmark iterations")
+	duration := flag.Duration("duration", 5*time.Second, "Duration to run each benchmark")
 	database := flag.String("database", "benchmarks", "Database name to use")
 	flag.Parse()
 
 	ctx := context.Background()
 
-	fmt.Printf("Starting benchmarks with %d iterations\n", *iterations)
+	fmt.Printf("Starting benchmarks with %v duration\n", *duration)
 
 	databases := []func() (BenchmarkDatabase, error){
 		func() (BenchmarkDatabase, error) {
@@ -44,7 +44,7 @@ func main() {
 		}
 
 		fmt.Printf("Running %s benchmark...\n", db.Name())
-		if err := runBenchmark(ctx, db, *iterations); err != nil {
+		if err := runBenchmark(ctx, db, *duration); err != nil {
 			db.Close(ctx)
 			log.Fatalf("%s benchmark failed: %v", db.Name(), err)
 		}
@@ -57,27 +57,34 @@ func main() {
 	fmt.Println("Benchmarks completed successfully")
 }
 
-func runBenchmark(ctx context.Context, db BenchmarkDatabase, iterations int) error {
+func runBenchmark(ctx context.Context, db BenchmarkDatabase, duration time.Duration) error {
 	if err := db.Setup(ctx); err != nil {
 		return fmt.Errorf("failed to setup %s: %w", db.Name(), err)
 	}
 
 	start := time.Now()
-	for i := range iterations {
+	deadline := start.Add(duration)
+	operations := 0
+
+	for i := 0; time.Now().Before(deadline); i++ {
 		tx := NewTransaction(i)
 
 		if err := db.InsertTransaction(ctx, tx); err != nil {
 			return fmt.Errorf("failed to insert transaction %d: %w", i, err)
 		}
+		operations++
 
-		if _, err := db.ReadTransaction(ctx, tx.ID); err != nil {
-			return fmt.Errorf("failed to read transaction %d: %w", i, err)
+		if time.Now().Before(deadline) {
+			if _, err := db.ReadTransaction(ctx, tx.ID); err != nil {
+				return fmt.Errorf("failed to read transaction %d: %w", i, err)
+			}
+			operations++
 		}
 	}
-	duration := time.Since(start)
+	actualDuration := time.Since(start)
 
 	fmt.Printf("%s: %d operations in %v (%.2f ops/sec)\n",
-		db.Name(), iterations*2, duration, float64(iterations*2)/duration.Seconds())
+		db.Name(), operations, actualDuration, float64(operations)/actualDuration.Seconds())
 
 	return nil
 }
