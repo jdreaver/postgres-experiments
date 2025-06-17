@@ -17,7 +17,8 @@ EOF
     sudo mkdir -p "$directory/etc/pgbouncer"
     sudo tee "$directory/etc/pgbouncer/pgbouncer.ini" > /dev/null <<EOF
 [databases]
-* = host=127.0.0.1 port=5432
+# Connect with Unix socket
+* = host=/var/run/postgresql
 
 [pgbouncer]
 listen_addr = 0.0.0.0
