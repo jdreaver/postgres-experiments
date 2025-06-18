@@ -41,7 +41,9 @@ func parseFlags() config {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: pgdaemon [command] [options]\n")
 		fmt.Fprintln(os.Stderr, "Commands:")
-		fmt.Fprintln(os.Stderr, "  daemon  Start the leader election daemon")
+		fmt.Fprintln(os.Stderr, "  daemon        Start the leader election daemon")
+		fmt.Fprintln(os.Stderr, "  show-cluster  Show current cluster state")
+		fmt.Fprintln(os.Stderr, "  failover      Perform failover to -target-primary or any replica if unspecified")
 		fmt.Fprintln(os.Stderr, "Options:")
 		flag.PrintDefaults()
 	}
