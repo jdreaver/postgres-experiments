@@ -12,6 +12,8 @@ create_pgbase_machine() {
         pgbouncer
         openssh
         haproxy
+        jre-openjdk # For DynamoDB
+        aws-cli # For DynamoDB
 
         # Misc tools/utils
         bat
@@ -40,6 +42,10 @@ create_pgbase_machine() {
 
     download_etcd
     sudo cp "$CACHE_DIR"/etcd-bin/{etcd,etcdctl,etcdutl} "$directory/usr/bin/"
+
+    download_dynamodb
+    sudo mkdir -p "$directory/opt"
+    sudo cp -r "$CACHE_DIR"/dynamodb-local "$directory/opt/dynamodb-local"
 
     download_mongod
     sudo cp "$CACHE_DIR"/mongod-bin/bin/mongod "$directory/usr/bin/"
@@ -95,6 +101,21 @@ download_etcd() {
     fi
 }
 
+download_dynamodb() {
+    # https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.DownloadingAndRunning.html
+    local ddb_filename="dynamodb_local_latest.tar.gz"
+    local dest_file="$CACHE_DIR/$ddb_filename"
+
+    if [[ ! -f "$dest_file" ]]; then
+        echo "Downloading DynamoDB to $dest_file..."
+        local ddb_url="https://d1ni2b6xgvw0s0.cloudfront.net/v2.x/$ddb_filename"
+        curl -L "$ddb_url" -o "$dest_file"
+        rm -rf "$CACHE_DIR/dynamodb-local"
+        mkdir -p "$CACHE_DIR/dynamodb-local"
+        tar -xzf "$dest_file" -C "$CACHE_DIR/dynamodb-local"
+    fi
+}
+
 download_mongod() {
     # Download mongodb with URL from
     # https://www.mongodb.com/try/download/community
@@ -147,6 +168,9 @@ create_machine() {
             ;;
         mongo*)
             setup_mongo "$name"
+            ;;
+        dynamodb*)
+            setup_dynamodb "$name"
             ;;
         *)
             echo "ERROR: Unknown machine name '$name'."

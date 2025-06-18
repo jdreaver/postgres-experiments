@@ -12,6 +12,9 @@ MACHINES += $(HAPROXY_MACHINES)
 MONGO_MACHINES = mongo0 mongo1 mongo2
 MACHINES += $(MONGO_MACHINES)
 
+DYNAMODB_MACHINES = dynamodb0
+MACHINES += $(DYNAMODB_MACHINES)
+
 RUN=./run.sh
 
 # Pattern rule for all machines
@@ -42,7 +45,7 @@ $(MACHINES): network pgbase pgdaemon
 	$(RUN) sudo machinectl start $@
 
 .PHONY: pg_cluster
-pg_cluster: $(POSTGRES_MACHINES) $(ETCD_MACHINES) $(HAPROXY_MACHINES)
+pg_cluster: $(POSTGRES_MACHINES) $(ETCD_MACHINES) $(HAPROXY_MACHINES) $(DYNAMODB_MACHINES)
 
 .PHONY: init_replset
 init_replset: $(MONGO_MACHINES)

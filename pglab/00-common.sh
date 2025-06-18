@@ -18,6 +18,7 @@ HOST_IPS[haproxy0]=10.42.0.30; HOSTS+=(haproxy0)
 HOST_IPS[mongo0]=10.42.0.40; HOSTS+=(mongo0)
 HOST_IPS[mongo1]=10.42.0.41; HOSTS+=(mongo1)
 HOST_IPS[mongo2]=10.42.0.42; HOSTS+=(mongo2)
+HOST_IPS[dynamodb0]=10.42.0.50; HOSTS+=(dynamodb0)
 
 IP_CIDR_SLASH=24
 
