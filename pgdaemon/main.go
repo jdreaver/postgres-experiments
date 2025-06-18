@@ -10,6 +10,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"golang.org/x/sync/errgroup"
 )
@@ -20,18 +23,44 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	cli, err := clientv3.New(clientv3.Config{
-		Endpoints:   []string{fmt.Sprintf("%s:%s", conf.etcdHost, conf.etcdPort)},
-		DialTimeout: 2 * time.Second,
-	})
-	if err != nil {
-		log.Fatal(fmt.Errorf("failed to connect to etcd: %w", err))
-	}
-	defer cli.Close()
+	var store StateStore
 
-	store, err := NewEtcdBackend(cli, conf.clusterName, conf.nodeName)
-	if err != nil {
-		log.Fatalf("Failed to create etcd backend: %v", err)
+	switch conf.storeBackend {
+	case "etcd":
+		log.Printf("Setting up etcd backend")
+		cli, err := clientv3.New(clientv3.Config{
+			Endpoints:   []string{fmt.Sprintf("%s:%s", conf.etcdHost, conf.etcdPort)},
+			DialTimeout: 2 * time.Second,
+		})
+		if err != nil {
+			log.Fatal(fmt.Errorf("failed to connect to etcd: %w", err))
+		}
+		defer cli.Close()
+
+		store = NewEtcdBackend(cli, conf.clusterName, conf.nodeName)
+	case "dynamodb":
+		log.Printf("Setting up DynamoDB backend")
+		cfg, err := awsconfig.LoadDefaultConfig(ctx)
+		if err != nil {
+			log.Fatalf("failed to load AWS configuration, %v", err)
+		}
+
+		dynamoClient := dynamodb.NewFromConfig(cfg, func(o *dynamodb.Options) {
+			if conf.dynamoDBEndpoint != "" {
+				o.BaseEndpoint = aws.String(conf.dynamoDBEndpoint)
+			}
+		})
+
+		dynamoStore := NewDynamoDBBackend(dynamoClient, conf.clusterName, conf.nodeName)
+
+		if err := dynamoStore.InitTable(ctx); err != nil {
+			log.Fatalf("Failed to initialize DynamoDB table: %v", err)
+		}
+
+		store = dynamoStore
+
+	default:
+		log.Fatalf("Unknown -store-backend %s", conf.storeBackend)
 	}
 
 	switch conf.command {

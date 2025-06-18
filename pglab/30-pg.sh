@@ -38,11 +38,16 @@ Description=Daemon for monitoring postgres
 After=network.target pgbouncer.service postgresql.service
 
 [Service]
-ExecStart=/usr/bin/pgdaemon -etcd-host etcd0 -cluster-name $PG_CLUSTER_NAME
+ExecStart=/usr/bin/pgdaemon -store-backend dynamodb -dynamodb-endpoint http://dynamodb0:8000 -cluster-name $PG_CLUSTER_NAME
 User=postgres
 Group=postgres
 Restart=always
 RestartSec=1s
+
+# Dummy AWS creds
+Environment=AWS_DEFAULT_REGION=us-east-1
+Environment=AWS_ACCESS_KEY_ID=AKIAEXAMPLE
+Environment=AWS_SECRET_ACCESS_KEY=EXAMPLEKEY
 
 [Install]
 WantedBy=multi-user.target

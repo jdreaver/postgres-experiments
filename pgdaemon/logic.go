@@ -42,60 +42,60 @@ type ClusterStatus struct {
 	// has written a newer status. This allows us to make decisions
 	// about state without a specific leader and dealing with leader
 	// election.
-	StatusUuid uuid.UUID `json:"status_uuid"`
+	StatusUuid uuid.UUID `json:"status_uuid" dynamodbav:"status_uuid"`
 
 	// SourceNode is the name of the node that last updated this
 	// cluster status.
-	SourceNode string `json:"source_node"`
+	SourceNode string `json:"source_node" dynamodbav:"source_node"`
 
 	// SourceNodeTime is the time reported by the source node when
 	// it last updated this cluster status. This is purely for
 	// informational purposes to aid humans in debugging.
-	SourceNodeTime string `json:"source_node_time,omitempty"`
+	SourceNodeTime string `json:"source_node_time,omitempty" dynamodbav:"source_node_time,omitempty"`
 
-	Health        ClusterHealth `json:"health"`
-	HealthReasons []string      `json:"health_reasons,omitempty"`
+	Health        ClusterHealth `json:"health" dynamodbav:"health"`
+	HealthReasons []string      `json:"health_reasons,omitempty" dynamodbav:"health_reasons,omitempty"`
 
 	// IntendedPrimary is the node that the cluster has decided
 	// should be the primary, although this may differ from the
 	// current primary during failovers.
-	IntendedPrimary  string   `json:"intended_primary"`
-	IntendedReplicas []string `json:"intended_replicas"`
+	IntendedPrimary  string   `json:"intended_primary" dynamodbav:"intended_primary"`
+	IntendedReplicas []string `json:"intended_replicas" dynamodbav:"intended_replicas,omitempty"`
 }
 
 // NodeDesiredState defines the desired state for a node.
 type NodeStatus struct {
-	Name string `json:"name"`
+	Name string `json:"name" dynamodbav:"name"`
 
 	// StatusUuid is a unique identifier for this status so nodes
 	// can detect if another node has written a newer status.
-	StatusUuid uuid.UUID `json:"status_uuid"`
+	StatusUuid uuid.UUID `json:"status_uuid" dynamodbav:"status_uuid"`
 
 	// NodeTime is the current time, as reported by the node. This
 	// is purely for informational purposes to aid humans in
 	// debugging. Only local, monotonic clocks are used for business
 	// logic.
-	NodeTime string `json:"node_time"`
+	NodeTime string `json:"node_time" dynamodbav:"node_time"`
 
-	Error             *string                `json:"error,omitempty"`
-	IsPrimary         bool                   `json:"is_primary"`
-	Replicas          []NodeReplicas         `json:"replicas,omitempty"`
-	ReplicationStatus *NodeReplicationStatus `json:"replication_status,omitempty"`
+	Error             *string                `json:"error,omitempty" dynamodbav:"error,omitempty"`
+	IsPrimary         bool                   `json:"is_primary" dynamodbav:"is_primary"`
+	Replicas          []NodeReplicas         `json:"replicas,omitempty" dynamodbav:"replicas,omitempty"`
+	ReplicationStatus *NodeReplicationStatus `json:"replication_status,omitempty" dynamodbav:"replication_status,omitempty"`
 }
 
 type NodeReplicas struct {
-	Hostname  string  `json:"hostname"`
-	State     string  `json:"state"`
-	WriteLsn  *string `json:"write_lsn"`
-	WriteLag  *string `json:"write_lag"`
-	SyncState *string `json:"sync_state"`
-	ReplyTime *string `json:"reply_time"`
+	Hostname  string  `json:"hostname" dynamodbav:"hostname"`
+	State     string  `json:"state" dynamodbav:"state"`
+	WriteLsn  *string `json:"write_lsn" dynamodbav:"write_lsn"`
+	WriteLag  *string `json:"write_lag" dynamodbav:"write_lag"`
+	SyncState *string `json:"sync_state" dynamodbav:"sync_state"`
+	ReplyTime *string `json:"reply_time" dynamodbav:"reply_time"`
 }
 
 type NodeReplicationStatus struct {
-	PrimaryHost string  `json:"primary_host"`
-	Status      string  `json:"status"`
-	WrittenLsn  *string `json:"written_lsn"`
+	PrimaryHost string  `json:"primary_host" dynamodbav:"primary_host"`
+	Status      string  `json:"status" dynamodbav:"status"`
+	WrittenLsn  *string `json:"written_lsn" dynamodbav:"written_lsn"`
 }
 
 func WriteClusterStatusIfChanged(store StateStore, oldStatus ClusterStatus, newStatus ClusterStatus, nodeName string) (ClusterStatus, error) {

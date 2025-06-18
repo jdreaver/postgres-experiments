@@ -17,12 +17,12 @@ type EtcdBackend struct {
 	nodeName    string
 }
 
-func NewEtcdBackend(client *clientv3.Client, clusterName string, nodeName string) (*EtcdBackend, error) {
+func NewEtcdBackend(client *clientv3.Client, clusterName string, nodeName string) *EtcdBackend {
 	return &EtcdBackend{
 		clusterName: clusterName,
 		client:      client,
 		nodeName:    nodeName,
-	}, nil
+	}
 }
 
 func (etcd *EtcdBackend) clusterPrefix() string {

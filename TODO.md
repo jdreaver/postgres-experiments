@@ -1,7 +1,5 @@
 # TODO
 
-DynamoDB backend (just abstract common bits from etcd backend)
-
 Get this running in AWS
 
 Benchmarking:
