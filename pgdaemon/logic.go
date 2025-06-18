@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"pgdaemon/election"
 	"reflect"
 	"slices"
 	"time"
@@ -12,8 +11,6 @@ import (
 )
 
 type StateStore interface {
-	election.ElectionBackend
-
 	SetClusterSpec(ctx context.Context, spec *ClusterSpec) error
 	FetchClusterState(ctx context.Context) (ClusterState, error)
 	WriteClusterStatus(ctx context.Context, prevStatusUUID uuid.UUID, status ClusterStatus) error

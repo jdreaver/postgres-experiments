@@ -6,12 +6,9 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	clientv3 "go.etcd.io/etcd/client/v3"
-
-	"pgdaemon/election"
 )
 
 type EtcdBackend struct {
@@ -19,10 +16,6 @@ type EtcdBackend struct {
 	clusterName string
 	nodeName    string
 }
-
-const etcdRvnKey = "/rvn"
-const etcdLeaderKey = "/leader"
-const etcdDurationMsKey = "/lease_duration_ms"
 
 func NewEtcdBackend(client *clientv3.Client, clusterName string, nodeName string) (*EtcdBackend, error) {
 	return &EtcdBackend{
@@ -34,10 +27,6 @@ func NewEtcdBackend(client *clientv3.Client, clusterName string, nodeName string
 
 func (etcd *EtcdBackend) clusterPrefix() string {
 	return "/" + etcd.clusterName
-}
-
-func (etcd *EtcdBackend) electionPrefix() string {
-	return etcd.clusterPrefix() + "/election"
 }
 
 func (etcd *EtcdBackend) clusterSpecPrefix() string {
@@ -58,64 +47,6 @@ func (etcd *EtcdBackend) nodeStatusesPrefix() string {
 
 func (etcd *EtcdBackend) nodeStatusPrefix(nodeName string) string {
 	return etcd.nodeStatusesPrefix() + "/" + nodeName
-}
-
-func (etcd *EtcdBackend) AtomicCompareAndSwapLease(ctx context.Context, prevRVN *uuid.UUID, newLease election.Lease) (bool, error) {
-	compare := clientv3.Compare(clientv3.CreateRevision(etcd.electionPrefix()+etcdRvnKey), "=", 0)
-	if prevRVN != nil {
-		lastRVN := *prevRVN
-		compare = clientv3.Compare(clientv3.Value(etcd.electionPrefix()+etcdRvnKey), "=", lastRVN.String())
-	}
-
-	txn := etcd.client.Txn(ctx)
-	txnResp, err := txn.If(
-		compare,
-	).Then(
-		clientv3.OpPut(etcd.electionPrefix()+etcdRvnKey, newLease.RevisionVersionNumber.String()),
-		clientv3.OpPut(etcd.electionPrefix()+etcdLeaderKey, newLease.Leader),
-		clientv3.OpPut(etcd.electionPrefix()+etcdDurationMsKey, fmt.Sprintf("%d", newLease.Duration.Milliseconds())),
-	).Commit()
-	if err != nil {
-		return false, fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	return txnResp.Succeeded, nil
-}
-
-func (etcd *EtcdBackend) FetchCurrentLease(ctx context.Context) (*election.Lease, error) {
-	getResp, err := etcd.client.Get(ctx, etcd.electionPrefix(), clientv3.WithPrefix())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get election key from etcd: %w", err)
-	}
-
-	if len(getResp.Kvs) == 0 {
-		return nil, nil
-	}
-
-	var lease election.Lease
-	for _, kv := range getResp.Kvs {
-		if string(kv.Key) == etcd.electionPrefix()+etcdRvnKey {
-			lease.RevisionVersionNumber, err = uuid.Parse(string(kv.Value))
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse RVN: %w", err)
-			}
-		} else if string(kv.Key) == etcd.electionPrefix()+etcdLeaderKey {
-			lease.Leader = string(kv.Value)
-		} else if string(kv.Key) == etcd.electionPrefix()+etcdDurationMsKey {
-			var durationMs int64
-			if _, err := fmt.Sscanf(string(kv.Value), "%d", &durationMs); err != nil {
-				return nil, fmt.Errorf("failed to parse lease duration: %w", err)
-			}
-			lease.Duration = time.Duration(durationMs) * time.Millisecond
-		} else {
-			log.Printf("WARNING: Ignoring unexpected key in election prefix: %s", kv.Key)
-		}
-	}
-	if lease.RevisionVersionNumber == uuid.Nil || lease.Leader == "" || lease.Duration <= 0 {
-		return nil, fmt.Errorf("incomplete lease data: %+v", lease)
-	}
-
-	return &lease, nil
 }
 
 func (etcd *EtcdBackend) WriteClusterStatus(ctx context.Context, prevStatusUUID uuid.UUID, status ClusterStatus) error {
@@ -176,7 +107,7 @@ func (etcd *EtcdBackend) FetchClusterState(ctx context.Context) (ClusterState, e
 
 	resp, err := etcd.client.Get(ctx, etcd.clusterPrefix(), clientv3.WithPrefix())
 	if err != nil {
-		return state, fmt.Errorf("failed to get election key from etcd: %w", err)
+		return state, fmt.Errorf("failed to get cluster state from etcd: %w", err)
 	}
 
 	if len(resp.Kvs) == 0 {
@@ -207,8 +138,6 @@ func (etcd *EtcdBackend) FetchClusterState(ctx context.Context) (ClusterState, e
 			}
 
 			state.Nodes = append(state.Nodes, nodeStatus)
-		} else if strings.HasPrefix(string(kv.Key), etcd.electionPrefix()) {
-			// Ignore election keys in cluster state
 		} else {
 			log.Printf("WARNING: Ignoring unexpected key in cluster prefix: %s", kv.Key)
 		}
@@ -216,3 +145,73 @@ func (etcd *EtcdBackend) FetchClusterState(ctx context.Context) (ClusterState, e
 
 	return state, nil
 }
+
+//
+// Old etcd leader election code
+//
+
+// const etcdRvnKey = "/rvn"
+// const etcdLeaderKey = "/leader"
+// const etcdDurationMsKey = "/lease_duration_ms"
+
+// func (etcd *EtcdBackend) electionPrefix() string {
+// 	return etcd.clusterPrefix() + "/election"
+// }
+
+// func (etcd *EtcdBackend) AtomicCompareAndSwapLease(ctx context.Context, prevRVN *uuid.UUID, newLease election.Lease) (bool, error) {
+// 	compare := clientv3.Compare(clientv3.CreateRevision(etcd.electionPrefix()+etcdRvnKey), "=", 0)
+// 	if prevRVN != nil {
+// 		lastRVN := *prevRVN
+// 		compare = clientv3.Compare(clientv3.Value(etcd.electionPrefix()+etcdRvnKey), "=", lastRVN.String())
+// 	}
+
+// 	txn := etcd.client.Txn(ctx)
+// 	txnResp, err := txn.If(
+// 		compare,
+// 	).Then(
+// 		clientv3.OpPut(etcd.electionPrefix()+etcdRvnKey, newLease.RevisionVersionNumber.String()),
+// 		clientv3.OpPut(etcd.electionPrefix()+etcdLeaderKey, newLease.Leader),
+// 		clientv3.OpPut(etcd.electionPrefix()+etcdDurationMsKey, fmt.Sprintf("%d", newLease.Duration.Milliseconds())),
+// 	).Commit()
+// 	if err != nil {
+// 		return false, fmt.Errorf("failed to commit transaction: %w", err)
+// 	}
+
+// 	return txnResp.Succeeded, nil
+// }
+
+// func (etcd *EtcdBackend) FetchCurrentLease(ctx context.Context) (*election.Lease, error) {
+// 	getResp, err := etcd.client.Get(ctx, etcd.electionPrefix(), clientv3.WithPrefix())
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to get election key from etcd: %w", err)
+// 	}
+
+// 	if len(getResp.Kvs) == 0 {
+// 		return nil, nil
+// 	}
+
+// 	var lease election.Lease
+// 	for _, kv := range getResp.Kvs {
+// 		if string(kv.Key) == etcd.electionPrefix()+etcdRvnKey {
+// 			lease.RevisionVersionNumber, err = uuid.Parse(string(kv.Value))
+// 			if err != nil {
+// 				return nil, fmt.Errorf("failed to parse RVN: %w", err)
+// 			}
+// 		} else if string(kv.Key) == etcd.electionPrefix()+etcdLeaderKey {
+// 			lease.Leader = string(kv.Value)
+// 		} else if string(kv.Key) == etcd.electionPrefix()+etcdDurationMsKey {
+// 			var durationMs int64
+// 			if _, err := fmt.Sscanf(string(kv.Value), "%d", &durationMs); err != nil {
+// 				return nil, fmt.Errorf("failed to parse lease duration: %w", err)
+// 			}
+// 			lease.Duration = time.Duration(durationMs) * time.Millisecond
+// 		} else {
+// 			log.Printf("WARNING: Ignoring unexpected key in election prefix: %s", kv.Key)
+// 		}
+// 	}
+// 	if lease.RevisionVersionNumber == uuid.Nil || lease.Leader == "" || lease.Duration <= 0 {
+// 		return nil, fmt.Errorf("incomplete lease data: %+v", lease)
+// 	}
+
+// 	return &lease, nil
+// }

@@ -20,7 +20,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// TODO: Support DynamoDB backend as well
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:   []string{fmt.Sprintf("%s:%s", conf.etcdHost, conf.etcdPort)},
 		DialTimeout: 2 * time.Second,
@@ -32,7 +31,7 @@ func main() {
 
 	store, err := NewEtcdBackend(cli, conf.clusterName, conf.nodeName)
 	if err != nil {
-		log.Fatalf("Failed to create election: %v", err)
+		log.Fatalf("Failed to create etcd backend: %v", err)
 	}
 
 	switch conf.command {
