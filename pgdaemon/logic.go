@@ -13,7 +13,7 @@ import (
 type StateStore interface {
 	SetClusterSpec(ctx context.Context, spec *ClusterSpec) error
 	FetchClusterState(ctx context.Context) (ClusterState, error)
-	WriteClusterStatus(ctx context.Context, prevStatusUUID uuid.UUID, status ClusterStatus) error
+	AtomicWriteClusterStatus(ctx context.Context, prevStatusUUID uuid.UUID, status ClusterStatus) error
 
 	WriteCurrentNodeStatus(ctx context.Context, status *NodeStatus) error
 }
@@ -103,7 +103,7 @@ func WriteClusterStatusIfChanged(store StateStore, oldStatus ClusterStatus, newS
 		newStatus.StatusUuid = uuid.New()
 		newStatus.SourceNode = nodeName
 		newStatus.SourceNodeTime = time.Now().Format(time.RFC3339)
-		if err := store.WriteClusterStatus(context.Background(), oldStatus.StatusUuid, newStatus); err != nil {
+		if err := store.AtomicWriteClusterStatus(context.Background(), oldStatus.StatusUuid, newStatus); err != nil {
 			return ClusterStatus{}, fmt.Errorf("failed to write cluster status: %w", err)
 		}
 	}

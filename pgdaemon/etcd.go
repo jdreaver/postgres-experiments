@@ -49,7 +49,7 @@ func (etcd *EtcdBackend) nodeStatusPrefix(nodeName string) string {
 	return etcd.nodeStatusesPrefix() + "/" + nodeName
 }
 
-func (etcd *EtcdBackend) WriteClusterStatus(ctx context.Context, prevStatusUUID uuid.UUID, status ClusterStatus) error {
+func (etcd *EtcdBackend) AtomicWriteClusterStatus(ctx context.Context, prevStatusUUID uuid.UUID, status ClusterStatus) error {
 	compare := clientv3.Compare(clientv3.CreateRevision(etcd.clusterStatusUuidPrefix()), "=", 0)
 	if prevStatusUUID != uuid.Nil {
 		compare = clientv3.Compare(clientv3.Value(etcd.clusterStatusUuidPrefix()), "=", prevStatusUUID.String())
