@@ -68,37 +68,21 @@ func (d *DynamoDBBackend) InitTable(ctx context.Context) error {
 	return nil
 }
 
-func (d *DynamoDBBackend) clusterSpecRangeKey() string {
-	return "spec"
-}
+const clusterSpecRangeKey = "spec"
+const clusterStatusRangeKey = "status"
+const nodeStatusesRangeKey = "node-statuses"
 
-func (d *DynamoDBBackend) clusterStatusRangeKey() string {
-	return "status"
-}
-
-func (d *DynamoDBBackend) nodeStatusesRangeKey() string {
-	return "node-statuses"
-}
-
-func (d *DynamoDBBackend) nodeStatusRangeKey(nodeName string) string {
-	return d.nodeStatusesRangeKey() + "/" + nodeName
-}
-
-type ddbClusterStatus struct {
-	ClusterName string `dynamodbav:"cluster_name"`
-	Key         string `dynamodbav:"key"`
-	ClusterStatus
+func nodeStatusRangeKey(nodeName string) string {
+	return nodeStatusesRangeKey + "/" + nodeName
 }
 
 func (d *DynamoDBBackend) AtomicWriteClusterStatus(ctx context.Context, prevStatusUUID uuid.UUID, status ClusterStatus) error {
-	value, err := attributevalue.MarshalMap(ddbClusterStatus{
-		ClusterName:   d.clusterName,
-		Key:           d.clusterStatusRangeKey(),
-		ClusterStatus: status,
-	})
+	value, err := attributevalue.MarshalMap(status)
 	if err != nil {
 		return fmt.Errorf("failed to marshal cluster status: %w", err)
 	}
+	value["cluster_name"] = &types.AttributeValueMemberS{Value: d.clusterName}
+	value["key"] = &types.AttributeValueMemberS{Value: clusterStatusRangeKey}
 
 	putItemInput := dynamodb.PutItemInput{
 		TableName: aws.String(tableName),
@@ -130,21 +114,13 @@ func (d *DynamoDBBackend) AtomicWriteClusterStatus(ctx context.Context, prevStat
 	return nil
 }
 
-type ddbNodeStatus struct {
-	ClusterName string `dynamodbav:"cluster_name"`
-	Key         string `dynamodbav:"key"`
-	NodeStatus
-}
-
 func (d *DynamoDBBackend) WriteCurrentNodeStatus(ctx context.Context, status *NodeStatus) error {
-	value, err := attributevalue.MarshalMap(ddbNodeStatus{
-		ClusterName: d.clusterName,
-		Key:         d.nodeStatusRangeKey(d.nodeName),
-		NodeStatus:  *status,
-	})
+	value, err := attributevalue.MarshalMap(*status)
 	if err != nil {
 		return fmt.Errorf("failed to marshal node status: %w", err)
 	}
+	value["cluster_name"] = &types.AttributeValueMemberS{Value: d.clusterName}
+	value["key"] = &types.AttributeValueMemberS{Value: nodeStatusRangeKey(d.nodeName)}
 
 	putItemInput := dynamodb.PutItemInput{
 		TableName: aws.String(tableName),
@@ -158,21 +134,13 @@ func (d *DynamoDBBackend) WriteCurrentNodeStatus(ctx context.Context, status *No
 	return nil
 }
 
-type ddbClusterSpec struct {
-	ClusterName string `dynamodbav:"cluster_name"`
-	Key         string `dynamodbav:"key"`
-	ClusterSpec
-}
-
 func (d *DynamoDBBackend) SetClusterSpec(ctx context.Context, spec *ClusterSpec) error {
-	value, err := attributevalue.MarshalMap(ddbClusterSpec{
-		ClusterName: d.clusterName,
-		Key:         d.clusterSpecRangeKey(),
-		ClusterSpec: *spec,
-	})
+	value, err := attributevalue.MarshalMap(*spec)
 	if err != nil {
 		return fmt.Errorf("failed to marshal cluster spec: %w", err)
 	}
+	value["cluster_name"] = &types.AttributeValueMemberS{Value: d.clusterName}
+	value["key"] = &types.AttributeValueMemberS{Value: clusterSpecRangeKey}
 
 	putItemInput := dynamodb.PutItemInput{
 		TableName: aws.String(tableName),
@@ -214,30 +182,26 @@ func (d *DynamoDBBackend) FetchClusterState(ctx context.Context) (ClusterState, 
 			return ClusterState{}, fmt.Errorf("failed to unmarshal key: %w", err)
 		}
 
-		if keyStr == d.clusterSpecRangeKey() {
-			var spec ddbClusterSpec
-			if err := attributevalue.UnmarshalMap(item, &spec); err != nil {
+		if keyStr == clusterSpecRangeKey {
+			if err := attributevalue.UnmarshalMap(item, &state.Spec); err != nil {
 				return ClusterState{}, fmt.Errorf("failed to unmarshal cluster spec: %w", err)
 			}
-			state.Spec = spec.ClusterSpec
 		}
-		if keyStr == d.clusterStatusRangeKey() {
-			var status ddbClusterStatus
-			if err := attributevalue.UnmarshalMap(item, &status); err != nil {
+		if keyStr == clusterStatusRangeKey {
+			if err := attributevalue.UnmarshalMap(item, &state.Status); err != nil {
 				return ClusterState{}, fmt.Errorf("failed to unmarshal cluster status: %w", err)
 			}
-			state.Status = status.ClusterStatus
 		}
-		if strings.HasPrefix(keyStr, d.nodeStatusesRangeKey()) {
-			nodeName := strings.TrimPrefix(keyStr, d.nodeStatusesRangeKey()+"/")
-			var nodeStatus ddbNodeStatus
+		if strings.HasPrefix(keyStr, nodeStatusesRangeKey) {
+			nodeName := strings.TrimPrefix(keyStr, nodeStatusesRangeKey+"/")
+			var nodeStatus NodeStatus
 			if err := attributevalue.UnmarshalMap(item, &nodeStatus); err != nil {
 				return ClusterState{}, fmt.Errorf("failed to unmarshal node status for %s: %w", nodeName, err)
 			}
 			if nodeName != nodeStatus.Name {
 				return ClusterState{}, fmt.Errorf("node status name mismatch: expected %s, got %s", nodeName, nodeStatus.Name)
 			}
-			state.Nodes = append(state.Nodes, nodeStatus.NodeStatus)
+			state.Nodes = append(state.Nodes, nodeStatus)
 		}
 	}
 
