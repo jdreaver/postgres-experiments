@@ -1,5 +1,9 @@
 # TODO
 
+DynamoDB backend (just abstract common bits from etcd backend)
+
+Get this running in AWS
+
 Benchmarking:
 - More tables/collections in dataset, with a more realistic sequence of actions (maybe copy the pgbench dataset?)
 - Have enough data where the dataset doesn't fit in memory (can artificially limit memory of database)
@@ -65,10 +69,6 @@ Failover plan:
 
 Mark cluster unhealthy and somehow mark replica as stale if `reply_time` is much lower than `node_time` on primary for a replica. Do this date math inside of postgres. (Or, is `write_lag` sufficient?)
 
-Leader election testing (if we don't nuke leader election):
-- Test `runInner` with mocked backend for leader election
-- Property tests that run "actions" sorted by time for leader election. Assert we have at most one leader at a time (no more than one node _thinks_ they are leader)
-
 Rethink PGDATA initialization: it would be nice to not have pgdaemon do so much of this (setting params and stuff). Maybe specify `-primary-init-script` and `-replica-init-script` args and put our logic in there. pgdaemon can just set relevant env vars for the replica script. Or we can just specify "extra config".
 
 Failover:
@@ -108,14 +108,16 @@ Use postgres system identifier to identify the cluster https://pgpedia.info/d/da
 
 Re-evaluate lease-based leader election. We can't ever guarantee there is only a single leader.
 - Perhaps "leader election" can be atomic compare-and-swaps for deciding cluster state, without needing a single leader that holds a lease. Each node can evaluate its state of the world and attempt to atomically write desired cluster state. The desired cluster state could itself be the "lease" (e.g. don't attempt to change state until lease expires, but no node "holds" the lease)
+- Leader election testing (if we don't nuke leader election)
+  - Test `runInner` with mocked backend for leader election
+  - Property tests that run "actions" sorted by time for leader election. Assert we have at most one leader at a time (no more than one node _thinks_ they are leader)
+
+Implement replicating from MongoDB to postgres and then flipping the switch to use postgres
 
 TLA+ or Quint to model out leader election in isolation and leader election + failover
 - https://learntla.com/
 - https://quint-lang.org/docs/why
 - Use the model to inform tests in the code (unit tests, integration tests, randomized/property tests, etc)
-
-Run MongoDB locally too.
-- Get benchmark MongoDB data set and get it replicated into postgres so we can compare apples to apples
 
 Make distinction between "can't connect to postgres" and "my queries failed".
 
@@ -137,9 +139,7 @@ Have leader clear out stale node state
 
 Nodes should ping one another so they can determine if etcd/DDB is down. If all nodes can be contacted, then continue as usual (sans leader elections). Especially important for primary. If primary can still contact a majority of replicas, then don't step down. If it can't, then step down.
 
-DynamoDB backend (just abstract common bits from etcd backend)
-
-Physical vs logical replication
+Logical replication between clusters:
 - "Physical replication group" is standard HA setup (1 primary, 1+ replicas).
 - Anything that requires logical replication (shard splits, complex migrations, vacuum full, etc) requires logically replicating from the primary physical group to another node. This combination is a "logical replication group"
   - Once we are ready to switch over to the logically-replicated node, we can spin up 1+ replicas right beforehand, making it HA.
@@ -150,14 +150,5 @@ Settings to investigate:
 - `recovery_target_*` stuff https://www.postgresql.org/docs/current/runtime-config-wal.html#RUNTIME-CONFIG-WAL-RECOVERY-TARGET
 - `hot_standby_feedback`, specifically for chained logical replication https://www.postgresql.org/docs/current/runtime-config-replication.html#RUNTIME-CONFIG-REPLICATION-STANDBY
 
-## Comparison with Mongo
-
-Compare replication and replica commit settings apples to apples with Mongo `{w: 1, j:0}`
-
-## EC2
-
-Get this running in AWS
-
 EBS supports atomic writes of up to 16 kB, so we can probably turn off `full_page_writes`. Many instance store SSD volumes also support this.
-
-https://docs.aws.amazon.com/whitepapers/latest/optimizing-postgresql-on-ec2-using-ebs/optimizing-postgresql-on-ec2-using-ebs.html
+- https://docs.aws.amazon.com/whitepapers/latest/optimizing-postgresql-on-ec2-using-ebs/optimizing-postgresql-on-ec2-using-ebs.html
