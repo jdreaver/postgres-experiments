@@ -3,6 +3,7 @@
 Get this running in AWS
 
 Benchmarking:
+- Ensure clients aren't bottlenecked. Record time spend actually talking to the database and not e.g. generating data. Try and see where actual DB falls over, not where client falls over.
 - More tables/collections in dataset, with a more realistic sequence of actions (maybe copy the pgbench dataset?)
 - Have enough data where the dataset doesn't fit in memory (can artificially limit memory of database)
 - Allow indexes

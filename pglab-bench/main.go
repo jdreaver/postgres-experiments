@@ -162,6 +162,8 @@ func connectPostgres(ctx context.Context, url string) (*pgx.Conn, error) {
 	// caching, which doesn't work with pgbouncer.
 	pgConfig.DefaultQueryExecMode = pgx.QueryExecModeExec
 
+	pgConfig.ConnectTimeout = 2 * time.Second
+
 	conn, err := pgx.ConnectConfig(ctx, pgConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
@@ -313,7 +315,7 @@ func NewMongoDB(url, database string) *MongoDB {
 func (m *MongoDB) Name() string { return "MongoDB" }
 
 func (m *MongoDB) Connect(ctx context.Context) (DBConnection, error) {
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(m.url))
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(m.url).SetTimeout(2*time.Second))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
 	}
