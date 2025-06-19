@@ -9,7 +9,6 @@ Benchmarking:
 - Toggle foreign keys for postgres
 - Transactions or not in postgres
 - Update-heavy workload, especially on large documents (put pressure on TOAST in postgres)
-- Vary size of each row/document by adding nonsense or lorem ipsum to a description string
 - Report difference in system CPU and memory utilization (think about how to do this when running on EC2)
   - On my machine I observe very consistently high CPU utilization and disk IO for Mongo compared to postgres
     - I'm also currently only reading from the postgres primary and not even interacting with postgres replicas, whereas with MongoDB I'm talking to all of them

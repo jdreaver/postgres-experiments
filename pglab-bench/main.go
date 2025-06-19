@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,6 +23,7 @@ func main() {
 	duration := flag.Duration("duration", 5*time.Second, "Duration to run each benchmark")
 	database := flag.String("database", "benchmarks", "Database name to use")
 	clients := flag.Int("clients", 1, "Number of concurrent clients")
+	descriptionBytes := flag.Int("description-bytes", 100, "Number of bytes in dummy transaction description")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -36,7 +38,7 @@ func main() {
 
 	for _, db := range databases {
 		fmt.Printf("Running %s benchmark...\n", db.Name())
-		if err := runBenchmark(ctx, db, *duration, *clients); err != nil {
+		if err := runBenchmark(ctx, db, *duration, *clients, *descriptionBytes); err != nil {
 			log.Fatalf("%s benchmark failed: %v", db.Name(), err)
 		}
 	}
@@ -44,7 +46,7 @@ func main() {
 	fmt.Println("Benchmarks completed successfully")
 }
 
-func runBenchmark(ctx context.Context, db BenchmarkDatabase, duration time.Duration, clients int) error {
+func runBenchmark(ctx context.Context, db BenchmarkDatabase, duration time.Duration, clients int, descriptionBytes int) error {
 	// Setup once with a single connection
 	setupConn, err := db.Connect(ctx)
 	if err != nil {
@@ -71,6 +73,7 @@ func runBenchmark(ctx context.Context, db BenchmarkDatabase, duration time.Durat
 	for range clients {
 		wg.Add(1)
 		go func() {
+			r := rand.New(rand.NewPCG(1, 2))
 			defer wg.Done()
 
 			conn, err := db.Connect(ctx)
@@ -83,7 +86,7 @@ func runBenchmark(ctx context.Context, db BenchmarkDatabase, duration time.Durat
 			clientOps := 0
 			for time.Now().Before(deadline) {
 				txID := int(atomic.AddInt64(&txIDCounter, 1) - 1)
-				tx := NewTransaction(txID)
+				tx := NewTransaction(txID, descriptionBytes, r)
 
 				if err := conn.InsertTransaction(ctx, tx); err != nil {
 					log.Printf("Failed to insert transaction %d: %v", txID, err)
@@ -118,14 +121,24 @@ type Transaction struct {
 	Description string    `json:"description" bson:"description"`
 }
 
-func NewTransaction(i int) Transaction {
+func NewTransaction(i int, descriptionBytes int, r *rand.Rand) Transaction {
 	return Transaction{
 		ID:          fmt.Sprintf("tx_%d", i),
 		Amount:      fmt.Sprintf("%.2f", float64(i)*10.50),
 		Currency:    "USD",
 		Time:        time.Now(),
-		Description: fmt.Sprintf("Test transaction %d", i),
+		Description: randString(r, descriptionBytes),
 	}
+}
+
+const printable = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-=_+[]{}|;:,.<>?/"
+
+func randString(r *rand.Rand, n int) string {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = printable[r.IntN(len(printable))]
+	}
+	return string(b)
 }
 
 type BenchmarkDatabase interface {
