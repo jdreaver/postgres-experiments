@@ -23,7 +23,7 @@ func main() {
 	duration := flag.Duration("duration", 5*time.Second, "Duration to run each benchmark")
 	database := flag.String("database", "benchmarks", "Database name to use")
 	clients := flag.Int("clients", 1, "Number of concurrent clients")
-	descriptionBytes := flag.Int("description-bytes", 100, "Number of bytes in dummy transaction description")
+	descriptionBytes := flag.Int("description-bytes", 100, "Number of bytes in dummy payment description")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -63,7 +63,7 @@ func runBenchmark(ctx context.Context, db BenchmarkDatabase, duration time.Durat
 
 	// Shared state for all clients
 	var totalOperations int64
-	var txIDCounter int64
+	var paymentIDCounter int64
 	deadline := time.Now().Add(duration)
 
 	// Start all client goroutines
@@ -73,7 +73,6 @@ func runBenchmark(ctx context.Context, db BenchmarkDatabase, duration time.Durat
 	for range clients {
 		wg.Add(1)
 		go func() {
-			r := rand.New(rand.NewPCG(1, 2))
 			defer wg.Done()
 
 			conn, err := db.Connect(ctx)
@@ -83,19 +82,20 @@ func runBenchmark(ctx context.Context, db BenchmarkDatabase, duration time.Durat
 			}
 			defer conn.Close(ctx)
 
+			r := rand.New(rand.NewPCG(1, 2))
 			clientOps := 0
 			for time.Now().Before(deadline) {
-				txID := int(atomic.AddInt64(&txIDCounter, 1) - 1)
-				tx := NewTransaction(txID, descriptionBytes, r)
+				paymentID := int(atomic.AddInt64(&paymentIDCounter, 1) - 1)
+				payment := NewPayment(paymentID, descriptionBytes, r)
 
-				if err := conn.InsertTransaction(ctx, tx); err != nil {
-					log.Printf("Failed to insert transaction %d: %v", txID, err)
+				if err := conn.InsertPayment(ctx, payment); err != nil {
+					log.Printf("Failed to insert payment %d: %v", paymentID, err)
 					continue
 				}
 				clientOps++
 
-				if _, err := conn.ReadTransaction(ctx, tx.ID); err != nil {
-					log.Printf("Failed to read transaction %d: %v", txID, err)
+				if _, err := conn.ReadPayment(ctx, payment.ID); err != nil {
+					log.Printf("Failed to read payment %d: %v", paymentID, err)
 					continue
 				}
 				clientOps++
@@ -113,7 +113,7 @@ func runBenchmark(ctx context.Context, db BenchmarkDatabase, duration time.Durat
 	return nil
 }
 
-type Transaction struct {
+type Payment struct {
 	ID          string    `json:"id" bson:"_id"`
 	Amount      string    `json:"amount" bson:"amount"`
 	Currency    string    `json:"currency" bson:"currency"`
@@ -121,9 +121,9 @@ type Transaction struct {
 	Description string    `json:"description" bson:"description"`
 }
 
-func NewTransaction(i int, descriptionBytes int, r *rand.Rand) Transaction {
-	return Transaction{
-		ID:          fmt.Sprintf("tx_%d", i),
+func NewPayment(i int, descriptionBytes int, r *rand.Rand) Payment {
+	return Payment{
+		ID:          fmt.Sprintf("payment_%d", i),
 		Amount:      fmt.Sprintf("%.2f", float64(i)*10.50),
 		Currency:    "USD",
 		Time:        time.Now(),
@@ -148,8 +148,8 @@ type BenchmarkDatabase interface {
 
 type DBConnection interface {
 	Setup(ctx context.Context) error
-	InsertTransaction(ctx context.Context, tx Transaction) error
-	ReadTransaction(ctx context.Context, id string) (*Transaction, error)
+	InsertPayment(ctx context.Context, payment Payment) error
+	ReadPayment(ctx context.Context, id string) (*Payment, error)
 	Close(ctx context.Context) error
 }
 
@@ -197,9 +197,9 @@ func (p *PostgresDB) Connect(ctx context.Context) (DBConnection, error) {
 
 func (p *PostgresDBConn) Setup(ctx context.Context) error {
 	query := `
-DROP TABLE IF EXISTS transactions;
+DROP TABLE IF EXISTS payments;
 
-CREATE TABLE IF NOT EXISTS transactions (
+CREATE TABLE IF NOT EXISTS payments (
   id TEXT PRIMARY KEY,
   amount TEXT NOT NULL,
   currency TEXT NOT NULL,
@@ -211,20 +211,20 @@ CREATE TABLE IF NOT EXISTS transactions (
 	return err
 }
 
-func (p *PostgresDBConn) InsertTransaction(ctx context.Context, tx Transaction) error {
-	query := `INSERT INTO transactions (id, amount, currency, time, description) VALUES ($1, $2, $3, $4, $5)`
-	_, err := p.conn.Exec(ctx, query, tx.ID, tx.Amount, tx.Currency, tx.Time, tx.Description)
+func (p *PostgresDBConn) InsertPayment(ctx context.Context, payment Payment) error {
+	query := `INSERT INTO payments (id, amount, currency, time, description) VALUES ($1, $2, $3, $4, $5)`
+	_, err := p.conn.Exec(ctx, query, payment.ID, payment.Amount, payment.Currency, payment.Time, payment.Description)
 	return err
 }
 
-func (p *PostgresDBConn) ReadTransaction(ctx context.Context, id string) (*Transaction, error) {
-	var tx Transaction
-	query := `SELECT id, amount, currency, time, description FROM transactions WHERE id = $1`
-	err := p.conn.QueryRow(ctx, query, id).Scan(&tx.ID, &tx.Amount, &tx.Currency, &tx.Time, &tx.Description)
+func (p *PostgresDBConn) ReadPayment(ctx context.Context, id string) (*Payment, error) {
+	var payment Payment
+	query := `SELECT id, amount, currency, time, description FROM payments WHERE id = $1`
+	err := p.conn.QueryRow(ctx, query, id).Scan(&payment.ID, &payment.Amount, &payment.Currency, &payment.Time, &payment.Description)
 	if err != nil {
 		return nil, err
 	}
-	return &tx, nil
+	return &payment, nil
 }
 
 func (p *PostgresDBConn) Close(ctx context.Context) error {
@@ -256,9 +256,9 @@ func (p *PostgresJsonbDB) Connect(ctx context.Context) (DBConnection, error) {
 
 func (p *PostgresJsonbDBConn) Setup(ctx context.Context) error {
 	query := `
-DROP TABLE IF EXISTS transactions_jsonb;
+DROP TABLE IF EXISTS payments_jsonb;
 
-CREATE TABLE IF NOT EXISTS transactions_jsonb (
+CREATE TABLE IF NOT EXISTS payments_jsonb (
   id TEXT PRIMARY KEY,
   data JSONB NOT NULL
 );`
@@ -267,31 +267,31 @@ CREATE TABLE IF NOT EXISTS transactions_jsonb (
 	return err
 }
 
-func (p *PostgresJsonbDBConn) InsertTransaction(ctx context.Context, tx Transaction) error {
-	txBytes, err := json.Marshal(tx)
+func (p *PostgresJsonbDBConn) InsertPayment(ctx context.Context, payment Payment) error {
+	paymentBytes, err := json.Marshal(payment)
 	if err != nil {
-		return fmt.Errorf("failed to marshal transaction: %w", err)
+		return fmt.Errorf("failed to marshal payment: %w", err)
 	}
 
-	query := `INSERT INTO transactions_jsonb (id, data) VALUES ($1, $2)`
-	_, err = p.conn.Exec(ctx, query, tx.ID, string(txBytes))
+	query := `INSERT INTO payments_jsonb (id, data) VALUES ($1, $2)`
+	_, err = p.conn.Exec(ctx, query, payment.ID, string(paymentBytes))
 	return err
 }
 
-func (p *PostgresJsonbDBConn) ReadTransaction(ctx context.Context, id string) (*Transaction, error) {
+func (p *PostgresJsonbDBConn) ReadPayment(ctx context.Context, id string) (*Payment, error) {
 	var data string
-	query := `SELECT data FROM transactions_jsonb WHERE id = $1`
+	query := `SELECT data FROM payments_jsonb WHERE id = $1`
 	err := p.conn.QueryRow(ctx, query, id).Scan(&data)
 	if err != nil {
 		return nil, err
 	}
 
-	var tx Transaction
-	if err := json.Unmarshal([]byte(data), &tx); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal transaction: %w", err)
+	var payment Payment
+	if err := json.Unmarshal([]byte(data), &payment); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal payment: %w", err)
 	}
 
-	return &tx, nil
+	return &payment, nil
 }
 
 func (p *PostgresJsonbDBConn) Close(ctx context.Context) error {
@@ -320,7 +320,7 @@ func (m *MongoDB) Connect(ctx context.Context) (DBConnection, error) {
 		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
 	}
 
-	collection := client.Database(m.database).Collection("transactions")
+	collection := client.Database(m.database).Collection("payments")
 	return &MongoDBConn{client: client, collection: collection}, nil
 }
 
@@ -328,18 +328,18 @@ func (m *MongoDBConn) Setup(ctx context.Context) error {
 	return m.collection.Drop(ctx)
 }
 
-func (m *MongoDBConn) InsertTransaction(ctx context.Context, tx Transaction) error {
-	_, err := m.collection.InsertOne(ctx, tx)
+func (m *MongoDBConn) InsertPayment(ctx context.Context, payment Payment) error {
+	_, err := m.collection.InsertOne(ctx, payment)
 	return err
 }
 
-func (m *MongoDBConn) ReadTransaction(ctx context.Context, id string) (*Transaction, error) {
-	var tx Transaction
-	err := m.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&tx)
+func (m *MongoDBConn) ReadPayment(ctx context.Context, id string) (*Payment, error) {
+	var payment Payment
+	err := m.collection.FindOne(ctx, bson.M{"_id": id}).Decode(&payment)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read Mongo transaction: %w", err)
+		return nil, fmt.Errorf("failed to read Mongo payment: %w", err)
 	}
-	return &tx, nil
+	return &payment, nil
 }
 
 func (m *MongoDBConn) Close(ctx context.Context) error {
