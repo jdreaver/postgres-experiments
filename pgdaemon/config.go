@@ -28,6 +28,8 @@ type config struct {
 
 	listenAddress string
 
+	wakeupPort int
+
 	targetPrimary string
 }
 
@@ -44,6 +46,7 @@ func parseFlags() config {
 	pbPort := flag.Int("pgbouncer-port", 6432, "PgBouncer port")
 	pgUser := flag.String("pguser", "postgres", "PostgreSQL user")
 	listenAddress := flag.String("listen", "0.0.0.0:8080", "Address to listen on")
+	wakeupPort := flag.Int("wakeup-port", 9090, "UDP port for wakeup packets (0 to disable)")
 	targetPrimary := flag.String("target-primary", "", "Target primary node for manual failover (optional)")
 
 	flag.Usage = func() {
@@ -95,6 +98,8 @@ func parseFlags() config {
 		pgBouncerPort: *pbPort,
 
 		listenAddress: *listenAddress,
+
+		wakeupPort: *wakeupPort,
 
 		targetPrimary: *targetPrimary,
 	}

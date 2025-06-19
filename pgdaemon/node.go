@@ -12,24 +12,43 @@ import (
 
 // nodeReconcilerLoop runs the node reconciler, which fetches the spec
 // and status of the current node and performs tasks to reconcile them.
-func nodeReconcilerLoop(ctx context.Context, store StateStore, conf config, pgNode *PostgresNode) error {
+func nodeReconcilerLoop(ctx context.Context, store StateStore, conf config, pgNode *PostgresNode, wakeupManager *WakeupManager) error {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
+
+	var wakeupChan <-chan struct{}
+	if wakeupManager != nil {
+		wakeupChan = wakeupManager.WakeupChannel()
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("returning ctx.Done() error in node reconciler loop: %w", ctx.Err())
 		case <-ticker.C:
-			if err := storeNodeStatus(ctx, store, conf.nodeName, pgNode); err != nil {
-				log.Printf("Failed to store node status: %v", err)
+			if err := performReconciliationCycle(ctx, store, conf, pgNode, wakeupManager); err != nil {
+				log.Printf("Failed to perform reconciliation cycle: %v", err)
 			}
-
-			if err := performNodeTasks(ctx, store, conf, pgNode); err != nil {
-				log.Printf("Failed to perform node tasks: %v", err)
+		case <-wakeupChan:
+			log.Printf("Wakeup received, performing immediate reconciliation")
+			if err := performReconciliationCycle(ctx, store, conf, pgNode, wakeupManager); err != nil {
+				log.Printf("Failed to perform reconciliation cycle: %v", err)
 			}
 		}
 	}
+}
+
+// performReconciliationCycle performs one full reconciliation cycle
+func performReconciliationCycle(ctx context.Context, store StateStore, conf config, pgNode *PostgresNode, wakeupManager *WakeupManager) error {
+	if err := storeNodeStatus(ctx, store, conf.nodeName, pgNode); err != nil {
+		log.Printf("Failed to store node status: %v", err)
+	}
+
+	if err := performNodeTasks(ctx, store, conf, pgNode, wakeupManager); err != nil {
+		return fmt.Errorf("Failed to perform node tasks: %w", err)
+	}
+
+	return nil
 }
 
 func storeNodeStatus(ctx context.Context, store StateStore, nodeName string, pgNode *PostgresNode) error {
@@ -74,17 +93,26 @@ func storeNodeStatus(ctx context.Context, store StateStore, nodeName string, pgN
 	return nil
 }
 
-func performNodeTasks(ctx context.Context, store StateStore, conf config, pgNode *PostgresNode) error {
+func performNodeTasks(ctx context.Context, store StateStore, conf config, pgNode *PostgresNode, wakeupManager *WakeupManager) error {
 	state, err := store.FetchClusterState(ctx)
 	if err != nil {
 		return fmt.Errorf("Failed to fetch node spec: %w", err)
 	}
 
 	newStatus := ComputeNewClusterStatus(state)
-	newStatus, err = WriteClusterStatusIfChanged(store, state.Status, newStatus, conf.nodeName)
+	newStatus, statusChanged, err := WriteClusterStatusIfChanged(store, state.Status, newStatus, conf.nodeName)
 	if err != nil {
 		return fmt.Errorf("Failed to write cluster status: %w", err)
 	}
+
+	// Send wakeup packets if cluster status changed and wakeup is enabled
+	if wakeupManager != nil && statusChanged {
+		peerHostnames := extractPeerHostnames(state.Nodes, conf.nodeName)
+		if len(peerHostnames) > 0 {
+			wakeupManager.SendWakeupToNodes(peerHostnames)
+		}
+	}
+
 	state.Status = newStatus
 
 	if state.Status.IntendedPrimary == conf.nodeName {
@@ -104,4 +132,16 @@ func performNodeTasks(ctx context.Context, store StateStore, conf config, pgNode
 	}
 
 	return nil
+}
+
+// extractPeerHostnames extracts hostnames of all peer nodes in the cluster except the current node
+// This function assumes node names are either hostnames or can be resolved as hostnames
+func extractPeerHostnames(nodes []NodeStatus, currentNodeName string) []string {
+	var peerHostnames []string
+	for _, node := range nodes {
+		if node.Name != currentNodeName && node.Name != "" {
+			peerHostnames = append(peerHostnames, node.Name)
+		}
+	}
+	return peerHostnames
 }

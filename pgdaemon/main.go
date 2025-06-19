@@ -103,10 +103,17 @@ func failover(ctx context.Context, store StateStore, targetPrimary string) {
 	newStatus := state.Status
 	newStatus.IntendedPrimary = targetPrimary
 	nodeName := "pgdaemon CLI"
-	if _, err := WriteClusterStatusIfChanged(store, state.Status, newStatus, nodeName); err != nil {
+
+	_, changed, err := WriteClusterStatusIfChanged(store, state.Status, newStatus, nodeName)
+	if err != nil {
 		log.Fatalf("Failed to write cluster status: %v", err)
 	}
-	log.Printf("Initiated failover to %s", targetPrimary)
+
+	if changed {
+		log.Printf("Initiated failover to %s", targetPrimary)
+	} else {
+		log.Printf("No changes made, current primary is already %s", targetPrimary)
+	}
 }
 
 func daemon(ctx context.Context, store StateStore, conf config) {
@@ -117,8 +124,17 @@ func daemon(ctx context.Context, store StateStore, conf config) {
 
 	g, ctx := errgroup.WithContext(ctx)
 
+	var wakeupManager *WakeupManager
+	if conf.wakeupPort > 0 {
+		wakeupManager = NewWakeupManager(conf.wakeupPort, conf.clusterName, conf.nodeName)
+		if err := wakeupManager.StartListener(ctx); err != nil {
+			log.Printf("Failed to start wakeup listener: %v", err)
+			wakeupManager = nil // Disable wakeup functionality
+		}
+	}
+
 	g.Go(func() error {
-		return nodeReconcilerLoop(ctx, store, conf, pgNode)
+		return nodeReconcilerLoop(ctx, store, conf, pgNode, wakeupManager)
 	})
 
 	g.Go(func() error {

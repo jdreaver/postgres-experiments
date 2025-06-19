@@ -98,16 +98,17 @@ type NodeReplicationStatus struct {
 	WrittenLsn  *string `json:"written_lsn" dynamodbav:"written_lsn"`
 }
 
-func WriteClusterStatusIfChanged(store StateStore, oldStatus ClusterStatus, newStatus ClusterStatus, nodeName string) (ClusterStatus, error) {
-	if clusterStatusChanged(oldStatus, newStatus) {
+func WriteClusterStatusIfChanged(store StateStore, oldStatus ClusterStatus, newStatus ClusterStatus, nodeName string) (ClusterStatus, bool, error) {
+	changed := clusterStatusChanged(oldStatus, newStatus)
+	if changed {
 		newStatus.StatusUuid = uuid.New()
 		newStatus.SourceNode = nodeName
 		newStatus.SourceNodeTime = time.Now().Format(time.RFC3339)
 		if err := store.AtomicWriteClusterStatus(context.Background(), oldStatus.StatusUuid, newStatus); err != nil {
-			return ClusterStatus{}, fmt.Errorf("failed to write cluster status: %w", err)
+			return ClusterStatus{}, false, fmt.Errorf("failed to write cluster status: %w", err)
 		}
 	}
-	return newStatus, nil
+	return newStatus, changed, nil
 }
 
 // clusterStatusChanged checks if any meaningful fields in the cluster

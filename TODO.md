@@ -119,6 +119,8 @@ TLA+ or Quint to model out leader election in isolation and leader election + fa
 
 Make distinction between "can't connect to postgres" and "my queries failed".
 
+Ensure that wakeup system is working. Maybe have nodes send wakeup by default every minute or so, just to test, and if a node doesn't receive a wakeup within two minutes, log a warning.
+
 Logging
 - Use log levels so we can filter out INFO/DEBUG logs sometimes (any significant events can be a higher level, maybe)
   - Would be nice if systemd understood the levels too
@@ -127,10 +129,6 @@ Logging
 Use https://github.com/spf13/viper to separate daemon and init command line flags and to support more configuration possibilities
 
 Investigate why inserting imdb data is so much slower sometimes. Used to take like 1.5 minutes total, now it is like 8 minutes. Replicas? Vacuuming? It is intermittent.
-
-Be smarter about loop duration to save costs. Slow down when things are healthy and speed up when not?
-- We could have a loop duration we use when everything is fine (say, 3s) and a faster duration if anything is unhealthy or not converged to desired state (say, 0.5s)
-- pgdaemons could listen on a UDP port for a "wakeup" that other nodes could fire off to all nodes when something significant happens, like a state change, or health degradation (basically any cluster status change?)
 
 Have leader clear out stale node state
 - Remember the last time we saw a node status UUID using a monotonic timestamp. If it gets old, mark the node as unhealthy. If it gets super duper old, remove the node status.
