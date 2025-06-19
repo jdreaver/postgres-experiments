@@ -6,8 +6,8 @@ Repo where I mess around with postgres.
 
 I'm using this repo to figure out the following:
 
-1. How does postgres performance compare to MongoDB in steady state?
-2. Is it to have a robust high availability setup with automated failover in postgres?
+1. How does postgres performance compare to MongoDB in steady state for a variety of workloads and replication setups?
+2. With postgres, is it possible to have a robust, high availability setup with quick, automated failover?
 3. How can you migrate a MongoDB replset to postgres with at most a few seconds of downtime?
 
 ## Running
