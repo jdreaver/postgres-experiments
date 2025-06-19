@@ -119,7 +119,9 @@ TLA+ or Quint to model out leader election in isolation and leader election + fa
 
 Make distinction between "can't connect to postgres" and "my queries failed".
 
-Ensure that wakeup system is working. Maybe have nodes send wakeup by default every minute or so, just to test, and if a node doesn't receive a wakeup within two minutes, log a warning.
+Enhance UDP communication between nodes:
+- Make `WAKEUP` a specific type of message. Also have `PING` or `HEARTBEAT` message so nodes can keep track of which other nodes are alive in case etcd/DynamoDB is down.
+  - If a node hasn't received a ping from one or more peers, mark something unhealthy.
 
 Logging
 - Use log levels so we can filter out INFO/DEBUG logs sometimes (any significant events can be a higher level, maybe)

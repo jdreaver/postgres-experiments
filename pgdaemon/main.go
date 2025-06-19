@@ -20,6 +20,8 @@ import (
 func main() {
 	conf := parseFlags()
 
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
