@@ -1,6 +1,7 @@
 # TODO
 
 Get this running in AWS
+- Set up Terraform or CloudFormation, as well as bash-based deployment system
 
 Benchmarking:
 - Ensure clients aren't bottlenecked. Record time spend actually talking to the database and not e.g. generating data. Try and see where actual DB falls over, not where client falls over.
