@@ -1,0 +1,106 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for postgres lab'
+
+Parameters:
+  User:
+    Type: String
+    Description: Username for resource naming and tags
+
+  PublicIP:
+    Type: String
+    Description: Public IP address for SSH access
+
+  InstanceType:
+    Type: String
+    Default: m6i.2xlarge
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: List of Subnet IDs
+
+  UbuntuAmiId:
+    Type: AWS::EC2::Image::Id
+    Description: Ubuntu AMI ID
+
+Resources:
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${User}-postgres-lab
+      GroupDescription: Security group for accessing postgres lab machines
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Sub ${PublicIP}/32
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${User}-postgres-lab
+        - Key: contact
+          Value: !Ref User
+
+  PostgresLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${User}-postgres-launch-template
+      LaunchTemplateData:
+        ImageId: !Ref UbuntuAmiId
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref User
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeSize: 100
+              VolumeType: gp3
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub ${User}-postgres
+              - Key: contact
+                Value: !Ref User
+          - ResourceType: volume
+            Tags:
+              - Key: Name
+                Value: !Sub ${User}-postgres
+              - Key: contact
+                Value: !Ref User
+
+  PostgresASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${User}-postgres-asg
+      VPCZoneIdentifier: !Ref SubnetIds
+      DesiredCapacity: 1
+      MinSize: 1
+      MaxSize: 10
+      LaunchTemplate:
+        LaunchTemplateId: !Ref PostgresLaunchTemplate
+        Version: !GetAtt PostgresLaunchTemplate.LatestVersionNumber
+      Tags:
+        - Key: Name
+          Value: !Sub ${User}-postgres
+          PropagateAtLaunch: true
+        - Key: contact
+          Value: !Ref User
+          PropagateAtLaunch: true
+
+Outputs:
+  SecurityGroupId:
+    Description: ID of the Security Group
+    Value: !Ref SecurityGroup
+  PostgresAutoScalingGroupName:
+    Description: Name of the postgres Auto Scaling Group
+    Value: !Ref PostgresASG
