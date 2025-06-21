@@ -255,7 +255,7 @@ func (p *PostgresNode) ConfigureAsPrimary(ctx context.Context) error {
 	if _, err := os.Stat(pgVersionFile); errors.Is(err, os.ErrNotExist) {
 		log.Printf("Initializing primary database in %s", pgDataDir)
 
-		cmd := exec.Command("initdb", "--pgdata", pgDataDir)
+		cmd := exec.Command("pg_ctl", "initdb", "--pgdata", pgDataDir)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
