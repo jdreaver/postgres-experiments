@@ -4,10 +4,6 @@ set -euo pipefail
 
 sudo apt update
 
-# Automated config (not needed, TODO deleteme):
-# sudo apt install -y postgresql-common
-# sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
-
 # Import the repository signing key
 sudo apt install curl ca-certificates
 sudo install -d /usr/share/postgresql-common/pgdg
@@ -40,7 +36,8 @@ sudo tee "/etc/sudoers.d/100-postgres" > /dev/null <<EOF
 postgres ALL=(ALL) NOPASSWD: /usr/bin/systemctl start postgresql.service, /usr/bin/systemctl stop postgresql.service, /usr/bin/systemctl restart postgresql.service, /usr/bin/systemctl reload postgresql.service, /usr/bin/systemctl start pgbouncer.service, /usr/bin/systemctl stop pgbouncer.service, /usr/bin/systemctl restart pgbouncer.service, /usr/bin/systemctl reload pgbouncer.service
 EOF
 
-# Create systemd unit, overriding the one that comes with apt package.. Taken from
+# Create systemd unit, overriding the one that comes with apt package.
+# Taken from
 # https://gitlab.archlinux.org/archlinux/packaging/packages/postgresql/-/blob/main/postgresql.service?ref_type=heads
 cat <<EOF | sudo tee /etc/systemd/system/postgresql.service
 [Unit]
@@ -62,8 +59,8 @@ PIDFile=/var/lib/postgres/data/postmaster.pid
 RuntimeDirectory=postgresql
 RuntimeDirectoryMode=755
 
-# ExecStartPre=/usr/bin/postgresql-check-db-dir ${PGROOT}/data
-ExecStart=/usr/lib/postgresql/${PG_VERSION}/bin/postgres -D ${PGROOT}/data
+# ExecStartPre=/usr/bin/postgresql-check-db-dir \${PGROOT}/data
+ExecStart=/usr/lib/postgresql/${PG_VERSION}/bin/postgres -D \${PGROOT}/data
 ExecReload=/bin/kill -HUP \${MAINPID}
 KillMode=mixed
 KillSignal=SIGINT
@@ -90,9 +87,54 @@ SystemCallArchitectures=native
 WantedBy=multi-user.target
 EOF
 
-# Download pgdaemon
+# Set up pgbouncer
+sudo apt -y install pgbouncer
+sudo systemctl disable --now pgbouncer.service
+
+sudo mkdir -p /etc/pgbouncer
+cat <<EOF | sudo tee /etc/pgbouncer/pgbouncer.ini
+[databases]
+# Connect with Unix socket
+* = host=/var/run/postgresql
+
+[pgbouncer]
+listen_addr = 0.0.0.0
+listen_port = 6432
+auth_type = trust
+auth_file = /etc/pgbouncer/userlist.txt
+pool_mode = transaction
+admin_users = postgres
+server_reset_query = DISCARD ALL
+EOF
+
+echo '"postgres" ""' > /etc/pgbouncer/userlist.txt
+chown -R postgres:postgres /etc/pgbouncer
+chmod 640 /etc/pgbouncer/userlist.txt
+
+# Set up pgdaemon
 sudo aws s3 cp "s3://$PGLAB_USER-postgres-lab/pgdaemon" /usr/local/bin/pgdaemon
 sudo chmod +x /usr/local/bin/pgdaemon
 
+cat <<EOF | sudo tee /etc/systemd/system/pgdaemon.service
+[Unit]
+Description=Daemon for monitoring postgres
+
+After=network.target pgbouncer.service postgresql.service
+
+[Service]
+Environment=AWS_DEFAULT_REGION=us-west-2
+ExecStart=/usr/local/bin/pgdaemon -store-backend dynamodb -cluster-name my-cluster
+
+User=postgres
+Group=postgres
+
+Restart=always
+RestartSec=1s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 # Final systemd stuff
 sudo systemctl daemon-reload
+sudo systemctl enable --now pgdaemon.service

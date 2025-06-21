@@ -23,3 +23,11 @@ upload_userdata() {
 upload_pgdaemon
 upload_userdata
 ./10-deploy-postgres-lab.sh
+
+# Useful commands:
+#
+# Cycle the ASG:
+#   aws autoscaling start-instance-refresh --auto-scaling-group-name $USER-postgres-asg
+#
+# Nuke the DDB table:
+#   aws dynamodb delete-table --table-name pgdaemon-clusters

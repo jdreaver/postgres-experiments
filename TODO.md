@@ -1,12 +1,10 @@
 # TODO
 
 Get this running in AWS
-- Get postgres working without weird systemd setup that comes with apt package
 - Maybe don't use sudo in userdata (not needed?)
 - Make a jump box with tools installed (pgdaemon, benchmarks, mongo client, etc)
   - Consider using the jump box to set up other machines instead of using userdata?
 - Get pgdaemon working
-- pgbouncer
 - NLB that talks to pgbouncer and uses pgdaemon for health checks
 - MongoDB instances
 

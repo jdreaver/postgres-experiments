@@ -38,6 +38,14 @@ Resources:
           FromPort: 22
           ToPort: 22
           CidrIp: !Sub ${PublicIP}/32
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: !Sub ${PublicIP}/32
+        - IpProtocol: tcp
+          FromPort: 6432
+          ToPort: 6432
+          CidrIp: !Sub ${PublicIP}/32
       SecurityGroupEgress:
         - IpProtocol: -1
           FromPort: -1
@@ -48,6 +56,17 @@ Resources:
           Value: !Sub ${User}-postgres-lab
         - Key: contact
           Value: !Ref User
+
+  # Allow all instances in the security group to talk amongst each other
+  # over all ports.
+  SecurityGroupSelfIngressRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref SecurityGroup
+      IpProtocol: -1
+      FromPort: -1
+      ToPort: -1
+      SourceSecurityGroupId: !Ref SecurityGroup
 
   PostgresIAMRole:
     Type: AWS::IAM::Role
@@ -168,24 +187,27 @@ Resources:
           Value: !Ref User
           PropagateAtLaunch: true
 
-  DDBTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: pgdaemon-clusters
-      AttributeDefinitions:
-        - AttributeName: cluster_name
-          AttributeType: S
-        - AttributeName: key
-          AttributeType: S
-      KeySchema:
-        - AttributeName: cluster_name
-          KeyType: HASH
-        - AttributeName: key
-          KeyType: RANGE
-      BillingMode: PAY_PER_REQUEST
-      Tags:
-        - Key: contact
-          Value: !Ref User
+  # For development, it is easier to let pgdaemon create the table on
+  # demand so we can wipe it easily.
+  #
+  # DDBTable:
+  #   Type: AWS::DynamoDB::Table
+  #   Properties:
+  #     TableName: pgdaemon-clusters
+  #     AttributeDefinitions:
+  #       - AttributeName: cluster_name
+  #         AttributeType: S
+  #       - AttributeName: key
+  #         AttributeType: S
+  #     KeySchema:
+  #       - AttributeName: cluster_name
+  #         KeyType: HASH
+  #       - AttributeName: key
+  #         KeyType: RANGE
+  #     BillingMode: PAY_PER_REQUEST
+  #     Tags:
+  #       - Key: contact
+  #         Value: !Ref User
 
 Outputs:
   SecurityGroupId:

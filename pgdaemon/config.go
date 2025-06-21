@@ -35,7 +35,7 @@ type config struct {
 }
 
 func parseFlags() config {
-	storeBackend := flag.String("store-backend", "etcd", "Backend to use for consensus (etcd or dynamodb)")
+	storeBackend := flag.String("store-backend", "dynamodb", "Backend to use for consensus (etcd or dynamodb)")
 	etcdHost := flag.String("etcd-host", "127.0.0.1", "etcd host")
 	etcdPort := flag.String("etcd-port", "2379", "etcd port")
 	dynamoDBTableName := flag.String("dynamodb-table", "pgdaemon-clusters", "DynamoDB table name")
