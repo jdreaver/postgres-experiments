@@ -49,6 +49,39 @@ Resources:
         - Key: contact
           Value: !Ref User
 
+  PostgresIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub ${User}-postgres-s3-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - arn:aws:s3:::davidreaver-postgres-lab
+                  - arn:aws:s3:::davidreaver-postgres-lab/*
+      Tags:
+        - Key: contact
+          Value: !Ref User
+
+  PostgresInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+        - !Ref PostgresIAMRole
+
   PostgresLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
     Properties:
@@ -59,6 +92,8 @@ Resources:
         KeyName: !Ref User
         SecurityGroupIds:
           - !Ref SecurityGroup
+        IamInstanceProfile:
+          Arn: !GetAtt PostgresInstanceProfile.Arn
         BlockDeviceMappings:
           - DeviceName: /dev/sda1
             Ebs:
@@ -77,6 +112,32 @@ Resources:
                 Value: !Sub ${User}-postgres
               - Key: contact
                 Value: !Ref User
+        UserData:
+          Fn::Base64:
+            !Sub |
+              #!/usr/bin/env bash
+
+              set -euo pipefail
+
+              export PGLAB_USER=${User}
+
+              # Install awscli
+              apt-get update
+              apt-get install -y unzip curl
+              curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+              unzip awscliv2.zip
+              ./aws/install
+              rm -rf aws awscliv2.zip
+              aws --version
+
+              # Download and run instance-specific scripts
+              aws s3 cp s3://davidreaver-postgres-lab/common-setup.sh /tmp/
+              chmod +x /tmp/common-setup.sh
+              /tmp/common-setup.sh
+
+              aws s3 cp s3://davidreaver-postgres-lab/postgres-setup.sh /tmp/
+              chmod +x /tmp/postgres-setup.sh
+              /tmp/postgres-setup.sh
 
   PostgresASG:
     Type: AWS::AutoScaling::AutoScalingGroup
@@ -104,3 +165,6 @@ Outputs:
   PostgresAutoScalingGroupName:
     Description: Name of the postgres Auto Scaling Group
     Value: !Ref PostgresASG
+  PostgresIAMRoleArn:
+    Description: ARN of the IAM Role
+    Value: !GetAtt PostgresIAMRole.Arn

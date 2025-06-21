@@ -1,7 +1,12 @@
 # TODO
 
 Get this running in AWS
-- Set up Terraform or CloudFormation, as well as bash-based deployment system
+- Set up DynamoDB
+- Get pgdaemon working
+- pgbouncer
+- NLB that talks to pgbouncer and uses pgdaemon for health checks
+- Don't use default apt postgres. Install a more recent version. https://www.postgresql.org/download/linux/ubuntu/
+- MongoDB instances
 
 Benchmarking:
 - Ensure clients aren't bottlenecked. Record time spend actually talking to the database and not e.g. generating data. Try and see where actual DB falls over, not where client falls over.
