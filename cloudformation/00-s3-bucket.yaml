@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for creating an S3 bucket for postgres lab artifacts'
+
+Parameters:
+  User:
+    Type: String
+    Description: Username for resource naming and tags
+
+Resources:
+  PostgresLabBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Sub ${User}-postgres-lab
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: contact
+          Value: !Ref User
+
+Outputs:
+  BucketName:
+    Description: 'Name of the created S3 bucket'
+    Value: !Ref PostgresLabBucket
+  BucketARN:
+    Description: 'ARN of the created S3 bucket'
+    Value: !GetAtt PostgresLabBucket.Arn
