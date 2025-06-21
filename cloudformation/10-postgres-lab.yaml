@@ -131,11 +131,11 @@ Resources:
               aws --version
 
               # Download and run instance-specific scripts
-              aws s3 cp s3://davidreaver-postgres-lab/common-setup.sh /tmp/
+              aws s3 cp "s3://$PGLAB_USER-postgres-lab/common-setup.sh" /tmp/
               chmod +x /tmp/common-setup.sh
               /tmp/common-setup.sh
 
-              aws s3 cp s3://davidreaver-postgres-lab/postgres-setup.sh /tmp/
+              aws s3 cp "s3://$PGLAB_USER-postgres-lab/postgres-setup.sh" /tmp/
               chmod +x /tmp/postgres-setup.sh
               /tmp/postgres-setup.sh
 

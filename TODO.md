@@ -1,11 +1,12 @@
 # TODO
 
 Get this running in AWS
+- Make a jump box with tools installed (pgdaemon, benchmarks, mongo client, etc)
+  - Consider using the jump box to set up other machines instead of using userdata?
 - Set up DynamoDB
 - Get pgdaemon working
 - pgbouncer
 - NLB that talks to pgbouncer and uses pgdaemon for health checks
-- Don't use default apt postgres. Install a more recent version. https://www.postgresql.org/download/linux/ubuntu/
 - MongoDB instances
 
 Benchmarking:
