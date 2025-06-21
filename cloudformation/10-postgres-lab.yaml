@@ -69,8 +69,18 @@ Resources:
                   - s3:GetObject
                   - s3:ListBucket
                 Resource:
-                  - arn:aws:s3:::davidreaver-postgres-lab
-                  - arn:aws:s3:::davidreaver-postgres-lab/*
+                  - !Sub arn:aws:s3:::${User}-postgres-lab
+                  - !Sub arn:aws:s3:::${User}-postgres-lab/*
+        - PolicyName: !Sub ${User}-postgres-dynamodb-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  # TODO: Restrict permissions
+                  - 'dynamodb:*'
+                Resource:
+                  - '*'
       Tags:
         - Key: contact
           Value: !Ref User
@@ -157,6 +167,25 @@ Resources:
         - Key: contact
           Value: !Ref User
           PropagateAtLaunch: true
+
+  DDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: pgdaemon-clusters
+      AttributeDefinitions:
+        - AttributeName: cluster_name
+          AttributeType: S
+        - AttributeName: key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: cluster_name
+          KeyType: HASH
+        - AttributeName: key
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      Tags:
+        - Key: contact
+          Value: !Ref User
 
 Outputs:
   SecurityGroupId:

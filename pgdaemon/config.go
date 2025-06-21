@@ -15,7 +15,8 @@ type config struct {
 	etcdHost string
 	etcdPort string
 
-	dynamoDBEndpoint string
+	dynamoDBTableName string
+	dynamoDBEndpoint  string
 
 	nodeName    string
 	clusterName string
@@ -37,7 +38,8 @@ func parseFlags() config {
 	storeBackend := flag.String("store-backend", "etcd", "Backend to use for consensus (etcd or dynamodb)")
 	etcdHost := flag.String("etcd-host", "127.0.0.1", "etcd host")
 	etcdPort := flag.String("etcd-port", "2379", "etcd port")
-	dynamoDBEndpoint := flag.String("dynamodb-endpoint", "http://dynamodb0:8000", "DynamoDB endpoint")
+	dynamoDBTableName := flag.String("dynamodb-table", "pgdaemon-clusters", "DynamoDB table name")
+	dynamoDBEndpoint := flag.String("dynamodb-endpoint", "", "DynamoDB endpoint")
 	nodeName := flag.String("node-name", "", "Name of this node")
 	clusterName := flag.String("cluster-name", "", "Name of the postgres cluster")
 	pgHost := flag.String("postgres-host", "127.0.0.1", "PostgreSQL host")
@@ -86,7 +88,8 @@ func parseFlags() config {
 		etcdHost: *etcdHost,
 		etcdPort: *etcdPort,
 
-		dynamoDBEndpoint: *dynamoDBEndpoint,
+		dynamoDBTableName: *dynamoDBTableName,
+		dynamoDBEndpoint:  *dynamoDBEndpoint,
 
 		nodeName:    *nodeName,
 		clusterName: *clusterName,

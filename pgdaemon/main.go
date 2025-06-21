@@ -53,7 +53,10 @@ func main() {
 			}
 		})
 
-		dynamoStore := NewDynamoDBBackend(dynamoClient, conf.clusterName, conf.nodeName)
+		dynamoStore, err := NewDynamoDBBackend(dynamoClient, conf.dynamoDBTableName, conf.clusterName, conf.nodeName)
+		if err != nil {
+			log.Fatalf("Failed to create DynamoDB backend: %v", err)
+		}
 
 		if err := dynamoStore.InitTable(ctx); err != nil {
 			log.Fatalf("Failed to initialize DynamoDB table: %v", err)
