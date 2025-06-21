@@ -173,7 +173,7 @@ Resources:
     Properties:
       AutoScalingGroupName: !Sub ${User}-postgres-asg
       VPCZoneIdentifier: !Ref SubnetIds
-      DesiredCapacity: 1
+      DesiredCapacity: 3
       MinSize: 1
       MaxSize: 10
       LaunchTemplate:
