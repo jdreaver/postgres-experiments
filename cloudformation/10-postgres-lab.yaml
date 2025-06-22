@@ -368,18 +368,6 @@ Resources:
           Value: !Ref User
 
 Outputs:
-  SecurityGroupId:
-    Description: ID of the Security Group
-    Value: !Ref SecurityGroup
-  PostgresAutoScalingGroupName:
-    Description: Name of the postgres ASG
-    Value: !Ref PostgresASG
-  IAMRoleArn:
-    Description: ARN of the IAM Role
-    Value: !GetAtt IAMRole.Arn
-  NLBDNSName:
-    Description: DNS name of the NLB
-    Value: !GetAtt PostgresNLB.DNSName
   PrimaryEndpoint:
     Description: Endpoint for postgres primaries
     Value: !Sub ${PostgresNLB.DNSName}:5432
