@@ -7,7 +7,6 @@ Get this running in AWS
 - MongoDB instances
   - Put mongosh on jump box too
 - Store IPs locally in a text file so it is easier to fetch them
-- Maybe don't use sudo in userdata (not needed?)
 
 Benchmarking:
 - Ensure clients aren't bottlenecked. Record time spend actually talking to the database and not e.g. generating data. Try and see where actual DB falls over, not where client falls over.

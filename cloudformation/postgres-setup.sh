@@ -2,44 +2,44 @@
 
 set -euo pipefail
 
-sudo apt update
+apt update
 
 # Import the repository signing key
-sudo apt install curl ca-certificates
-sudo install -d /usr/share/postgresql-common/pgdg
-sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
+apt install curl ca-certificates
+install -d /usr/share/postgresql-common/pgdg
+curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc
 
 # Create the repository configuration file
 . /etc/os-release
-sudo sh -c "echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $VERSION_CODENAME-pgdg main' > /etc/apt/sources.list.d/pgdg.list"
+sh -c "echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $VERSION_CODENAME-pgdg main' > /etc/apt/sources.list.d/pgdg.list"
 
 # Install the latest version of PostgreSQL
 PG_VERSION=17
-sudo apt update
-sudo apt -y install postgresql-$PG_VERSION
+apt update
+apt -y install postgresql-$PG_VERSION
 
 # Disable the default PostgreSQL service installed from the apt package
-sudo systemctl disable --now postgresql.service
+systemctl disable --now postgresql.service
 
 # Don't use pg_ctlcluster, which is a wrapper around pg_ctl. Use pg_ctl directly.
-sudo ln -sf /usr/lib/postgresql/$PG_VERSION/bin/pg_ctl /usr/local/bin/pg_ctl
+ln -sf /usr/lib/postgresql/$PG_VERSION/bin/pg_ctl /usr/local/bin/pg_ctl
 
 # Nuke the default PostgreSQL data
-sudo rm -rf /var/lib/postgresql/$PG_VERSION
+rm -rf /var/lib/postgresql/$PG_VERSION
 
 # Use this directory for data
-sudo mkdir -p /var/lib/postgres
-sudo chown -R postgres:postgres /var/lib/postgres
+mkdir -p /var/lib/postgres
+chown -R postgres:postgres /var/lib/postgres
 
 # Allow postgres user to start and stop postgres
-sudo tee "/etc/sudoers.d/100-postgres" > /dev/null <<EOF
+tee "/etc/sudoers.d/100-postgres" > /dev/null <<EOF
 postgres ALL=(ALL) NOPASSWD: /usr/bin/systemctl start postgresql.service, /usr/bin/systemctl stop postgresql.service, /usr/bin/systemctl restart postgresql.service, /usr/bin/systemctl reload postgresql.service, /usr/bin/systemctl start pgbouncer.service, /usr/bin/systemctl stop pgbouncer.service, /usr/bin/systemctl restart pgbouncer.service, /usr/bin/systemctl reload pgbouncer.service
 EOF
 
 # Create systemd unit, overriding the one that comes with apt package.
 # Taken from
 # https://gitlab.archlinux.org/archlinux/packaging/packages/postgresql/-/blob/main/postgresql.service?ref_type=heads
-cat <<EOF | sudo tee /etc/systemd/system/postgresql.service
+cat <<EOF | tee /etc/systemd/system/postgresql.service
 [Unit]
 Description=PostgreSQL database server
 Documentation=man:postgres(1)
@@ -88,11 +88,11 @@ WantedBy=multi-user.target
 EOF
 
 # Set up pgbouncer
-sudo apt -y install pgbouncer
-sudo systemctl disable --now pgbouncer.service
+apt -y install pgbouncer
+systemctl disable --now pgbouncer.service
 
-sudo mkdir -p /etc/pgbouncer
-cat <<EOF | sudo tee /etc/pgbouncer/pgbouncer.ini
+mkdir -p /etc/pgbouncer
+cat <<EOF | tee /etc/pgbouncer/pgbouncer.ini
 [databases]
 # Connect with Unix socket
 * = host=/var/run/postgresql
@@ -112,10 +112,10 @@ chown -R postgres:postgres /etc/pgbouncer
 chmod 640 /etc/pgbouncer/userlist.txt
 
 # Set up pgdaemon
-sudo aws s3 cp "s3://$PGLAB_USER-postgres-lab/pgdaemon" /usr/local/bin/pgdaemon
-sudo chmod +x /usr/local/bin/pgdaemon
+aws s3 cp "s3://$PGLAB_USER-postgres-lab/pgdaemon" /usr/local/bin/pgdaemon
+chmod +x /usr/local/bin/pgdaemon
 
-cat <<EOF | sudo tee /etc/systemd/system/pgdaemon.service
+cat <<EOF | tee /etc/systemd/system/pgdaemon.service
 [Unit]
 Description=Daemon for monitoring postgres
 
@@ -136,5 +136,5 @@ WantedBy=multi-user.target
 EOF
 
 # Final systemd stuff
-sudo systemctl daemon-reload
-sudo systemctl enable --now pgdaemon.service
+systemctl daemon-reload
+systemctl enable --now pgdaemon.service
