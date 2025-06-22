@@ -18,6 +18,10 @@ Parameters:
     Type: AWS::EC2::VPC::Id
     Description: VPC ID
 
+  VpcCidr:
+    Type: String
+    Description: CIDR block for the VPC
+
   SubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
     Description: List of Subnet IDs
@@ -34,6 +38,7 @@ Resources:
       GroupDescription: Security group for accessing postgres lab machines
       VpcId: !Ref VpcId
       SecurityGroupIngress:
+        # Allow traffic from my IP address
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
@@ -46,6 +51,11 @@ Resources:
           FromPort: 6432
           ToPort: 6432
           CidrIp: !Sub ${PublicIP}/32
+        # Allow all VPC traffic
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref VpcCidr
       SecurityGroupEgress:
         - IpProtocol: -1
           FromPort: -1
@@ -179,6 +189,9 @@ Resources:
       LaunchTemplate:
         LaunchTemplateId: !Ref PostgresLaunchTemplate
         Version: !GetAtt PostgresLaunchTemplate.LatestVersionNumber
+      TargetGroupARNs:
+        - !Ref PostgresPrimaryTargetGroup
+        - !Ref PostgresAllNodesTargetGroup
       Tags:
         - Key: Name
           Value: !Sub ${User}-postgres
@@ -209,13 +222,93 @@ Resources:
   #       - Key: contact
   #         Value: !Ref User
 
+  PostgresNLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${User}-postgres-nlb
+      Scheme: internet-facing
+      Type: network
+      Subnets: !Ref SubnetIds
+      Tags:
+        - Key: contact
+          Value: !Ref User
+
+  PostgresPrimaryTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: postgres-primary-tg
+      Port: 6432 # pgbouncer port
+      Protocol: TCP
+      VpcId: !Ref VpcId
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: 8080 # pgdaemon port
+      HealthCheckPath: /primary
+      HealthCheckIntervalSeconds: 5
+      HealthCheckTimeoutSeconds: 2
+      TargetType: instance
+      Tags:
+        - Key: contact
+          Value: !Ref User
+
+  PostgresAllNodesTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: postgres-all-nodes-tg
+      Port: 6432  # pbbouncer port
+      Protocol: TCP
+      VpcId: !Ref VpcId
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: 8080 # pgdaemon port
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 5
+      HealthCheckTimeoutSeconds: 2
+      TargetType: instance
+      Tags:
+        - Key: contact
+          Value: !Ref User
+
+  PrimaryListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref PostgresPrimaryTargetGroup
+      LoadBalancerArn: !Ref PostgresNLB
+      Port: 5432
+      Protocol: TCP
+      Tags:
+        - Key: contact
+          Value: !Ref User
+
+  AllNodesListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref PostgresAllNodesTargetGroup
+      LoadBalancerArn: !Ref PostgresNLB
+      Port: 5433
+      Protocol: TCP
+      Tags:
+        - Key: contact
+          Value: !Ref User
+
 Outputs:
   SecurityGroupId:
     Description: ID of the Security Group
     Value: !Ref SecurityGroup
   PostgresAutoScalingGroupName:
-    Description: Name of the postgres Auto Scaling Group
+    Description: Name of the postgres ASG
     Value: !Ref PostgresASG
   PostgresIAMRoleArn:
     Description: ARN of the IAM Role
     Value: !GetAtt PostgresIAMRole.Arn
+  NLBDNSName:
+    Description: DNS name of the NLB
+    Value: !GetAtt PostgresNLB.DNSName
+  PrimaryEndpoint:
+    Description: Endpoint for postgres primaries
+    Value: !Sub ${PostgresNLB.DNSName}:5432
+  AllNodesEndpoint:
+    Description: Endpoint for all postgres nodes
+    Value: !Sub ${PostgresNLB.DNSName}:5433
