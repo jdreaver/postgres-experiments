@@ -1,14 +1,13 @@
 # TODO
 
 Get this running in AWS
+- Better hostnames
 - Figure out how to deal with NLB failing open when all targets unhealthy. Maybe we need to manually handle setting targets, at least for primary?
   - There is some "administrative override" option I see.
 - MongoDB instances
+  - Put mongosh on jump box too
 - Store IPs locally in a text file so it is easier to fetch them
-- Better hostnames
 - Maybe don't use sudo in userdata (not needed?)
-- Make a jump box with tools installed (pgdaemon, benchmarks, mongo client, etc)
-  - Consider using the jump box to set up other machines instead of using userdata?
 
 Benchmarking:
 - Ensure clients aren't bottlenecked. Record time spend actually talking to the database and not e.g. generating data. Try and see where actual DB falls over, not where client falls over.

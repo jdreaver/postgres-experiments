@@ -13,14 +13,22 @@ upload_pgdaemon() {
     aws s3 cp pgdaemon "s3://$BUCKET_NAME/"
 }
 
+upload_pglab_bench() {
+    echo "Building and uploading pglab-bench to S3 bucket: $BUCKET_NAME"
+    GOOS=linux GOARCH=amd64 go build -C "$SCRIPT_DIR/../pglab-bench" -o "$(realpath "$SCRIPT_DIR")/pglab-bench"
+    aws s3 cp pglab-bench "s3://$BUCKET_NAME/"
+}
+
 upload_userdata() {
     echo "Uploading common setup and postgres setup scripts to S3 bucket: $BUCKET_NAME"
     aws s3 cp common-setup.sh "s3://$BUCKET_NAME/"
     aws s3 cp postgres-setup.sh "s3://$BUCKET_NAME/"
+    aws s3 cp jump-box-setup.sh "s3://$BUCKET_NAME/"
 }
 
 ./00-deploy-s3-bucket.sh
 upload_pgdaemon
+upload_pglab_bench
 upload_userdata
 ./10-deploy-postgres-lab.sh
 

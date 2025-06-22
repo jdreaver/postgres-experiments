@@ -34,7 +34,7 @@ Resources:
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Sub ${User}-postgres-lab
+      GroupName: !Sub ${User}-pglab
       GroupDescription: Security group for accessing postgres lab machines
       VpcId: !Ref VpcId
       SecurityGroupIngress:
@@ -62,8 +62,6 @@ Resources:
           ToPort: -1
           CidrIp: 0.0.0.0/0
       Tags:
-        - Key: Name
-          Value: !Sub ${User}-postgres-lab
         - Key: contact
           Value: !Ref User
 
@@ -78,7 +76,7 @@ Resources:
       ToPort: -1
       SourceSecurityGroupId: !Ref SecurityGroup
 
-  PostgresIAMRole:
+  IAMRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -89,7 +87,7 @@ Resources:
               Service: ec2.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: !Sub ${User}-postgres-s3-access
+        - PolicyName: !Sub ${User}-pglab-s3-access
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -100,7 +98,7 @@ Resources:
                 Resource:
                   - !Sub arn:aws:s3:::${User}-postgres-lab
                   - !Sub arn:aws:s3:::${User}-postgres-lab/*
-        - PolicyName: !Sub ${User}-postgres-dynamodb-access
+        - PolicyName: !Sub ${User}-pglab-dynamodb-access
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -114,17 +112,17 @@ Resources:
         - Key: contact
           Value: !Ref User
 
-  PostgresInstanceProfile:
+  InstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
       Path: "/"
       Roles:
-        - !Ref PostgresIAMRole
+        - !Ref IAMRole
 
-  PostgresLaunchTemplate:
+  JumpBoxLaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
     Properties:
-      LaunchTemplateName: !Sub ${User}-postgres-launch-template
+      LaunchTemplateName: !Sub ${User}-pglab-jump-box
       LaunchTemplateData:
         ImageId: !Ref UbuntuAmiId
         InstanceType: !Ref InstanceType
@@ -132,7 +130,7 @@ Resources:
         SecurityGroupIds:
           - !Ref SecurityGroup
         IamInstanceProfile:
-          Arn: !GetAtt PostgresInstanceProfile.Arn
+          Arn: !GetAtt InstanceProfile.Arn
         BlockDeviceMappings:
           - DeviceName: /dev/sda1
             Ebs:
@@ -142,13 +140,89 @@ Resources:
           - ResourceType: instance
             Tags:
               - Key: Name
-                Value: !Sub ${User}-postgres
+                Value: !Sub ${User}-pglab-jump-box
               - Key: contact
                 Value: !Ref User
           - ResourceType: volume
             Tags:
               - Key: Name
-                Value: !Sub ${User}-postgres
+                Value: !Sub ${User}-pblab-jump-box
+              - Key: contact
+                Value: !Ref User
+        UserData:
+          Fn::Base64:
+            !Sub |
+              #!/usr/bin/env bash
+
+              set -euo pipefail
+
+              export PGLAB_USER=${User}
+
+              # Install awscli
+              apt-get update
+              apt-get install -y unzip curl
+              curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+              unzip awscliv2.zip
+              ./aws/install
+              rm -rf aws awscliv2.zip
+              aws --version
+
+              # Download and run instance-specific scripts
+              aws s3 cp "s3://$PGLAB_USER-postgres-lab/common-setup.sh" /tmp/
+              chmod +x /tmp/common-setup.sh
+              /tmp/common-setup.sh
+
+              aws s3 cp "s3://$PGLAB_USER-postgres-lab/jump-box-setup.sh" /tmp/
+              chmod +x /tmp/jump-box-setup.sh
+              /tmp/jump-box-setup.sh
+
+  JumpBoxASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${User}-pglab-jump-box
+      VPCZoneIdentifier: !Ref SubnetIds
+      DesiredCapacity: 1
+      MinSize: 1
+      MaxSize: 3
+      LaunchTemplate:
+        LaunchTemplateId: !Ref JumpBoxLaunchTemplate
+        Version: !GetAtt JumpBoxLaunchTemplate.LatestVersionNumber
+      Tags:
+        - Key: Name
+          Value: !Sub ${User}-pglab-jump-box
+          PropagateAtLaunch: true
+        - Key: contact
+          Value: !Ref User
+          PropagateAtLaunch: true
+
+  PostgresLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${User}-pglab-postgres
+      LaunchTemplateData:
+        ImageId: !Ref UbuntuAmiId
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref User
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeSize: 100
+              VolumeType: gp3
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub ${User}-pblab-postgres
+              - Key: contact
+                Value: !Ref User
+          - ResourceType: volume
+            Tags:
+              - Key: Name
+                Value: !Sub ${User}-pglab-postgres
               - Key: contact
                 Value: !Ref User
         UserData:
@@ -181,7 +255,7 @@ Resources:
   PostgresASG:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      AutoScalingGroupName: !Sub ${User}-postgres-asg
+      AutoScalingGroupName: !Sub ${User}-pglab-postgres
       VPCZoneIdentifier: !Ref SubnetIds
       DesiredCapacity: 3
       MinSize: 1
@@ -194,7 +268,7 @@ Resources:
         - !Ref PostgresAllNodesTargetGroup
       Tags:
         - Key: Name
-          Value: !Sub ${User}-postgres
+          Value: !Sub ${User}-pglab-postgres
           PropagateAtLaunch: true
         - Key: contact
           Value: !Ref User
@@ -225,7 +299,7 @@ Resources:
   PostgresNLB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: !Sub ${User}-postgres-nlb
+      Name: !Sub ${User}-pglab-postgres
       Scheme: internet-facing
       Type: network
       Subnets: !Ref SubnetIds
@@ -267,7 +341,7 @@ Resources:
         - Key: contact
           Value: !Ref User
 
-  PrimaryListener:
+  PostgresPrimaryListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       DefaultActions:
@@ -280,7 +354,7 @@ Resources:
         - Key: contact
           Value: !Ref User
 
-  AllNodesListener:
+  PostgresAllNodesListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       DefaultActions:
@@ -300,9 +374,9 @@ Outputs:
   PostgresAutoScalingGroupName:
     Description: Name of the postgres ASG
     Value: !Ref PostgresASG
-  PostgresIAMRoleArn:
+  IAMRoleArn:
     Description: ARN of the IAM Role
-    Value: !GetAtt PostgresIAMRole.Arn
+    Value: !GetAtt IAMRole.Arn
   NLBDNSName:
     Description: DNS name of the NLB
     Value: !GetAtt PostgresNLB.DNSName
