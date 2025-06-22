@@ -182,7 +182,7 @@ Resources:
       AutoScalingGroupName: !Sub ${User}-pglab-jump-box
       VPCZoneIdentifier: !Ref SubnetIds
       DesiredCapacity: 1
-      MinSize: 1
+      MinSize: 0
       MaxSize: 3
       LaunchTemplate:
         LaunchTemplateId: !Ref JumpBoxLaunchTemplate
@@ -258,7 +258,7 @@ Resources:
       AutoScalingGroupName: !Sub ${User}-pglab-postgres
       VPCZoneIdentifier: !Ref SubnetIds
       DesiredCapacity: 3
-      MinSize: 1
+      MinSize: 0
       MaxSize: 10
       LaunchTemplate:
         LaunchTemplateId: !Ref PostgresLaunchTemplate
@@ -299,8 +299,7 @@ Resources:
   PostgresNLB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: !Sub ${User}-pglab-postgres
-      Scheme: internet-facing
+      Scheme: internal
       Type: network
       Subnets: !Ref SubnetIds
       Tags:
@@ -320,6 +319,9 @@ Resources:
       HealthCheckIntervalSeconds: 5
       HealthCheckTimeoutSeconds: 2
       TargetType: instance
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '1'  # Reduce from default 300 seconds
       Tags:
         - Key: contact
           Value: !Ref User
@@ -337,6 +339,9 @@ Resources:
       HealthCheckIntervalSeconds: 5
       HealthCheckTimeoutSeconds: 2
       TargetType: instance
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '1'  # Reduce from default 300 seconds
       Tags:
         - Key: contact
           Value: !Ref User

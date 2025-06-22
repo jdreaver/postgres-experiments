@@ -35,7 +35,8 @@ upload_userdata
 # Useful commands:
 #
 # Cycle the ASG:
-#   aws autoscaling start-instance-refresh --auto-scaling-group-name $USER-postgres-asg
+#   aws autoscaling set-desired-capacity --auto-scaling-group-name $USER-pglab-postgres --desired-capacity 0
+#   aws autoscaling set-desired-capacity --auto-scaling-group-name $USER-pglab-postgres --desired-capacity 3
 #
 # Nuke the DDB table:
 #   aws dynamodb delete-table --table-name pgdaemon-clusters
