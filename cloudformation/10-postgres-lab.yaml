@@ -322,6 +322,8 @@ Resources:
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
           Value: '1'  # Reduce from default 300 seconds
+        - Key: deregistration_delay.connection_termination.enabled
+          Value: true
       Tags:
         - Key: contact
           Value: !Ref User
@@ -342,6 +344,8 @@ Resources:
       TargetGroupAttributes:
         - Key: deregistration_delay.timeout_seconds
           Value: '1'  # Reduce from default 300 seconds
+        - Key: deregistration_delay.connection_termination.enabled
+          Value: true
       Tags:
         - Key: contact
           Value: !Ref User

@@ -1,11 +1,11 @@
 # TODO
 
 Get this running in AWS
+- MongoDB instances
+  - Put mongosh on jump box too
 - Better hostnames
 - Figure out how to deal with NLB failing open when all targets unhealthy. Maybe we need to manually handle setting targets, at least for primary?
   - There is some "administrative override" option I see.
-- MongoDB instances
-  - Put mongosh on jump box too
 - Store IPs locally in a text file so it is easier to fetch them
 
 Benchmarking:
