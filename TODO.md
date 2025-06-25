@@ -10,7 +10,7 @@ Get this running in AWS
   - There is some "administrative override" option I see.
 - Store IPs locally in a text file so it is easier to fetch them
 
-Benchmarking:
+pglab-bench
 - Ensure clients aren't bottlenecked. Record time spend actually talking to the database and not e.g. generating data. Try and see where actual DB falls over, not where client falls over.
 - More tables/collections in dataset, with a more realistic sequence of actions (maybe copy the pgbench dataset?)
 - Have enough data where the dataset doesn't fit in memory (can artificially limit memory of database)
@@ -26,6 +26,14 @@ Benchmarking:
     - https://www.enterprisedb.com/press-releases/new-benchmarks-show-postgres-dominating-mongodb-varied-workloads
 - Remember about haproxy and pgbouncer in front of postgres. I see like 1.8x throughput for a single client when we talk to primary directly.
 - Logical replication vs physical, especially for extreme workloads like large JSON blobs
+
+Benchmark checklist:
+- [x] Compare apples-to-apples for replication (synchronous_commit=off in postgres is the same as {w:1, j:false} in Mongo)
+- Large documents
+- Compare size of stored data
+  - Turn on compression for both Mongo and postgres TOAST.
+- Same number of replicas
+- Consider proxies in front (NLB -> pgbouncer -> postgres, NLB -> Mongo). Try with and without proxies.
 
 Integration test that performs a couple failovers and postgres queries work (through HAProxy), all nodes are reporting to etcd, all nodes are healthy, replication is working, etc
 
