@@ -23,6 +23,7 @@ upload_userdata() {
     echo "Uploading common setup and postgres setup scripts to S3 bucket: $BUCKET_NAME"
     aws s3 cp common-setup.sh "s3://$BUCKET_NAME/"
     aws s3 cp postgres-setup.sh "s3://$BUCKET_NAME/"
+    aws s3 cp mongodb-setup.sh "s3://$BUCKET_NAME/"
     aws s3 cp jump-box-setup.sh "s3://$BUCKET_NAME/"
 }
 

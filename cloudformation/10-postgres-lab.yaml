@@ -43,13 +43,20 @@ Resources:
           FromPort: 22
           ToPort: 22
           CidrIp: !Sub ${PublicIP}/32
+        # Postgres
         - IpProtocol: tcp
           FromPort: 5432
           ToPort: 5432
           CidrIp: !Sub ${PublicIP}/32
+        # pgbouncer
         - IpProtocol: tcp
           FromPort: 6432
           ToPort: 6432
+          CidrIp: !Sub ${PublicIP}/32
+        # MongoDB
+        - IpProtocol: tcp
+          FromPort: 27017
+          ToPort: 27017
           CidrIp: !Sub ${PublicIP}/32
         # Allow all VPC traffic
         - IpProtocol: -1
@@ -106,6 +113,16 @@ Resources:
                 Action:
                   # TODO: Restrict permissions
                   - 'dynamodb:*'
+                Resource:
+                  - '*'
+        - PolicyName: !Sub ${User}-pglab-ec2-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ec2:DescribeInstances'
+                  - 'autoscaling:DescribeAutoScalingGroups'
                 Resource:
                   - '*'
       Tags:
@@ -274,6 +291,84 @@ Resources:
           Value: !Ref User
           PropagateAtLaunch: true
 
+  MongoLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${User}-pglab-mongo
+      LaunchTemplateData:
+        ImageId: !Ref UbuntuAmiId
+        InstanceType: !Ref InstanceType
+        KeyName: !Ref User
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeSize: 100
+              VolumeType: gp3
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub ${User}-pglab-mongo
+              - Key: contact
+                Value: !Ref User
+          - ResourceType: volume
+            Tags:
+              - Key: Name
+                Value: !Sub ${User}-pglab-mongo
+              - Key: contact
+                Value: !Ref User
+        UserData:
+          Fn::Base64:
+            !Sub |
+              #!/usr/bin/env bash
+
+              set -euo pipefail
+
+              export PGLAB_USER=${User}
+
+              # Install awscli
+              apt-get update
+              apt-get install -y unzip curl
+              curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+              unzip awscliv2.zip
+              ./aws/install
+              rm -rf aws awscliv2.zip
+              aws --version
+
+              # Download and run instance-specific scripts
+              aws s3 cp "s3://$PGLAB_USER-postgres-lab/common-setup.sh" /tmp/
+              chmod +x /tmp/common-setup.sh
+              /tmp/common-setup.sh
+
+              aws s3 cp "s3://$PGLAB_USER-postgres-lab/mongodb-setup.sh" /tmp/
+              chmod +x /tmp/mongodb-setup.sh
+              /tmp/mongodb-setup.sh
+
+  MongoASG:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${User}-pglab-mongo
+      VPCZoneIdentifier: !Ref SubnetIds
+      DesiredCapacity: 3
+      MinSize: 0
+      MaxSize: 5
+      LaunchTemplate:
+        LaunchTemplateId: !Ref MongoLaunchTemplate
+        Version: !GetAtt MongoLaunchTemplate.LatestVersionNumber
+      TargetGroupARNs:
+        - !Ref MongoTargetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${User}-pglab-mongo
+          PropagateAtLaunch: true
+        - Key: contact
+          Value: !Ref User
+          PropagateAtLaunch: true
+
   # For development, it is easier to let pgdaemon create the table on
   # demand so we can wipe it easily.
   #
@@ -376,6 +471,50 @@ Resources:
         - Key: contact
           Value: !Ref User
 
+  MongoNLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internal
+      Type: network
+      Subnets: !Ref SubnetIds
+      Tags:
+        - Key: contact
+          Value: !Ref User
+
+  MongoTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: mongo-tg
+      Port: 27017
+      Protocol: TCP
+      VpcId: !Ref VpcId
+      HealthCheckProtocol: TCP
+      HealthCheckPort: 27017
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 10
+      TargetType: instance
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
+        - Key: deregistration_delay.connection_termination.enabled
+          Value: true
+      Tags:
+        - Key: contact
+          Value: !Ref User
+
+  MongoListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MongoTargetGroup
+      LoadBalancerArn: !Ref MongoNLB
+      Port: 27017
+      Protocol: TCP
+      Tags:
+        - Key: contact
+          Value: !Ref User
+
 Outputs:
   PrimaryEndpoint:
     Description: Endpoint for postgres primaries
@@ -383,3 +522,6 @@ Outputs:
   AllNodesEndpoint:
     Description: Endpoint for all postgres nodes
     Value: !Sub ${PostgresNLB.DNSName}:5433
+  MongoEndpoint:
+    Description: Endpoint for MongoDB replica set
+    Value: !Sub ${MongoNLB.DNSName}:27017
