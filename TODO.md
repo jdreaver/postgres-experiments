@@ -3,6 +3,8 @@
 Get this running in AWS
 - MongoDB instances
   - Put mongosh on jump box too
+- Observability
+  - Ultimate goal: see all relevant load test metrics for different configurations and be able to compare them
 - Better hostnames
 - Figure out how to deal with NLB failing open when all targets unhealthy. Maybe we need to manually handle setting targets, at least for primary?
   - There is some "administrative override" option I see.
