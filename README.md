@@ -10,6 +10,32 @@ I'm using this repo to figure out the following:
 2. With postgres, is it possible to have a robust, high availability setup with quick, automated failover?
 3. How can you migrate a MongoDB replset to postgres with at most a few seconds of downtime?
 
+## Status
+
+### pgdaemon
+
+`pgdaemon` sits on each postgres node and participates in running the cluster. It manages its local postgres instance on the same node and communicates with other `pgdaemon`s primarily via a state store (etcd or DynamoDB).
+
+The key feature of `pgdaemon` is deterministically converting cluster status (including node health) into a new desired cluster status and atomically storing that new status into the state store. This is done using a compare-and-set operation and doesn't require leader election. Nodes exclusively use local monotonic clocks to track staleness, so they don't rely on synchronized clocks.
+
+Each `pgdaemon` fetches the desired state of the cluster and applies it to their node. For example, if the cluster is just spinning up, the local node will have to be configured as the primary or as a replica that follows a specific primary. During failover, a node will have to be reconfigured to become a primary via `pg_promote`, or follow a new primary (set `primary_conninfo`, maybe `pg_rewind`, etc).
+
+When a cluster first starts, `pgdaemon` knows how to join itself to the cluster without central coordination. Nodes can seamlessly join the cluster at-will.
+
+### systemd-nspawn and AWS
+
+There are scripts to run this locally on a Linux machine using `systemd-nspawn`. The containers include multiple postgres nodes, an etcd cluster, a MongoDB cluster, an HAProxy machine, and a DynamoDB local machine.
+
+There are also scripts and CloudFormation templates to deploy this on AWS for more realistic testing and latency.
+
+### Load balancing and connection pooling
+
+`pgdaemon` includes health check endpoints for determining if the current node is the primary and/or if it is healthy. Load balancers (HAProxy or an AWS NLB) can use these endpoints to route traffic to a primary or just any healthy node. Each node also has a local `pgbouncer` to pool connections.
+
+### Future work
+
+Raw TODOs are in [TODO.md](./TODO.md).
+
 ## Running
 
 Run `make -j` to build and run the lab machines. Tip: you can use `make -o [rule]` to skip a rule as a dependency.
